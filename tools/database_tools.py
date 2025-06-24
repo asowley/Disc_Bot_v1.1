@@ -32,8 +32,6 @@ async def store_info_to_db(server_number, players):
 
     return None
 
-
-
 async def get_user_alias_and_tribe(puid):
 
     conn = await db_connector()
