@@ -42,7 +42,7 @@ class EOS:
 
         return json.loads(token)
 
-    async def ticket(self, server):
+    async def ticket(self, server, room_id):
         conn = await db_connector()
 
         async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -87,8 +87,8 @@ class EOS:
 
         return data['clientBaseUrl'], data['participants'][0]['token'], puid
 
-    async def players(self, server):
-        uri, ticket, puid = await self.ticket(server)
+    async def players(self, server, room_id):
+        uri, ticket, puid = await self.ticket(server, room_id)
 
         first_message = {
             "type": "join",
@@ -236,11 +236,3 @@ class EOS:
                 print(data)
         
         return data['publicData'], data['publicData']['totalPlayers'], data['publicData']['settings']['maxPublicPlayers']
-
-# async def main():
-#     eos = EOS()
-#     result, total_players, max_players = await eos.matchmaking("2159")
-#     print(result, total_players, max_players)
-
-# if __name__ == "__main__":
-#     asyncio.run(main())
