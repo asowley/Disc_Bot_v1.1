@@ -4,6 +4,7 @@ import aiohttp
 import random
 import websockets
 import logging
+from datetime import datetime, timezone
 
 from connector import db_connector
 import aiomysql
@@ -43,22 +44,6 @@ class EOS:
         return json.loads(token)
 
     async def ticket(self, server, room_id):
-        conn = await db_connector()
-
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("""
-                SELECT room_id
-                FROM ark_servers
-                WHERE ark_server = %s
-                AND room_id <> 0
-            """, (server,))
-            data = await cursor.fetchone()
-
-        if data:
-            room_id = data['room_id']
-        else:
-            return None, None, None
-
         url = f"{self.api_url}/rtc/v1/{self.deployment_id}/room/{room_id}"
 
         puid = await random_user()
@@ -152,6 +137,8 @@ class EOS:
 
         players_info = []
 
+        now = datetime.now(timezone.utc)
+
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             for users in data['productUsers'].items():
                 puid = users[0]
@@ -175,12 +162,37 @@ class EOS:
                         """, (puid, account['accountId'], account['identityProviderId']))
                         await conn.commit()
 
+                    # Parse lastLogin and calculate time since login
+                    last_login_str = account.get('lastLogin')
+                    login_seconds = None
+                    if last_login_str:
+                        try:
+                            last_login_dt = datetime.strptime(last_login_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                            time_diff = now - last_login_dt
+                            login_seconds = int(time_diff.total_seconds())
+                            hours, remainder = divmod(login_seconds, 3600)
+                            minutes = remainder // 60
+                            last_login_fmt = f"{hours}h {minutes}m"
+                        except Exception as e:
+                            last_login_fmt = "Unknown"
+                    else:
+                        last_login_fmt = "Unknown"
+
                     players_info.append({
                         "puid": puid,
                         "display_name": account['displayName'],
                         "account": account['accountId'],
-                        "platform": account['identityProviderId']
+                        "platform": account['identityProviderId'],
+                        "last_login": last_login_fmt,
+                        "login_seconds": login_seconds if login_seconds is not None else -1
                     })
+
+        # Sort players by login_seconds descending (longest logged in first)
+        players_info.sort(key=lambda x: x.get("login_seconds", -1), reverse=True)
+
+        # Remove 'login_seconds' from the returned dicts
+        for player in players_info:
+            player.pop("login_seconds", None)
 
         return players_info
 
@@ -215,6 +227,8 @@ class EOS:
                         raise Exception(f"No server {server_number}")
 
                     session_id = server.get("SessionID", "N/A")
+                    ip = server.get("IP", "N/A")
+                    port = server.get("Port", "N/A")
                     if session_id == "N/A":
                         logging.error(f"[EOS.py] No SessionID found for server {server_number}.")
                         raise Exception(f"No SessionID for server {server_number}")
@@ -233,6 +247,5 @@ class EOS:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 data = await response.json()
-                print(data)
         
-        return data['publicData'], data['publicData']['totalPlayers'], data['publicData']['settings']['maxPublicPlayers']
+        return data['publicData'], data['publicData']['totalPlayers'], data['publicData']['settings']['maxPublicPlayers'], f"{ip}:{port}"

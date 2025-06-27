@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from tools.EOS import EOS
-from tools.connector import db_connector
+from EOS import EOS
+from connector import db_connector
 import aiomysql
 import time
 import json
@@ -23,6 +23,10 @@ async def fetch_players_for_server(eos, ark_server, room_id):
     try:
         players = await eos.players(ark_server, room_id)
         logging.info(f"[all_servers_monitor.py] Server {ark_server}: {len(players)} players")
+        info = await eos.info(players)
+        # players_display_name = {player['display_name'] for player in info}
+        # print(f"Players info for server {ark_server}: {players_display_name}")
+        # print("**********************")
         return ark_server, players
     except Exception as e:
         logging.error(f"[all_servers_monitor.py] Error fetching players for server {ark_server}: {e}")
@@ -50,7 +54,7 @@ async def monitor_all_servers():
     state = load_state()
 
     async with conn.cursor(aiomysql.DictCursor) as cursor:
-        await cursor.execute("SELECT ark_server, room_id, tribe FROM ark_servers")
+        await cursor.execute("SELECT ark_server, room_id, tribe FROM ark_servers_new")
         servers = await cursor.fetchall()
 
     # Prepare tasks for all servers (room_id of 0 is allowed)
@@ -80,5 +84,14 @@ async def monitor_all_servers():
     end_time = time.time()
     elapsed = end_time - start_time
     print(f"[all_servers_monitor.py] Monitoring completed in {elapsed:.2f} seconds.")
+    
+
+async def main():
+    await monitor_all_servers()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
 
 
