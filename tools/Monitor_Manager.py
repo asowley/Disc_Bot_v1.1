@@ -52,3 +52,25 @@ class Monitor_Manager:
         self.monitors[(server_number, type_of_monitor, channel_id)] = monitor
         await monitor.start()
         logging.info(f"Added monitor for server {server_number}, type {type_of_monitor}, channel {channel_id}, guild {guild_id}.")
+
+    async def remove_monitor(self, server_number, type_of_monitor, channel_id, guild_id):
+        key = (server_number, type_of_monitor, channel_id)
+        if key not in self.monitors:
+            logging.warning(f"Monitor for server {server_number}, type {type_of_monitor}, channel {channel_id} does not exist.")
+            return
+
+        # Remove from database
+        conn = await db_connector()
+        async with conn.cursor() as cursor:
+            await cursor.execute(
+                """
+                DELETE FROM monitors_new
+                WHERE ark_server = %s AND type = %s AND channel_id = %s AND guild_id = %s
+                """,
+                (server_number, type_of_monitor, channel_id, guild_id)
+            )
+            await conn.commit()
+
+        monitor = self.monitors.pop(key)
+        await monitor.stop()
+        logging.info(f"Removed monitor for server {server_number}, type {type_of_monitor}, channel {channel_id}, guild {guild_id}.")
