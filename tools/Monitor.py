@@ -7,8 +7,7 @@ import aiomysql
 
 import discord
 from tools.EOS import EOS
-from tools.database_tools import get_user_alias, get_user_tribe_and_most_joined_server
-
+from tools.player_display import build_player_list_embeds
 from tools.connector import db_connector
 
 class Monitor:
@@ -53,21 +52,20 @@ class Monitor:
             try:
                 await self._run_monitor()
             except asyncio.CancelledError:
-                # If cancelled, break the loop to stop
                 if self.stopped:
                     logging.info(f"Monitor for server {self.server_number} has been stopped.")
                     break
-                await asyncio.sleep(10)  # Wait before restart
+                await asyncio.sleep(10)
             except Exception as e:
                 logging.error(f"Monitor crashed with error: {e}, restarting...")
-                await asyncio.sleep(10)  # Wait before restart
+                await asyncio.sleep(10)
 
     async def _run_monitor(self):
         logging.info(f"Starting monitor (type {self.type_of_monitor}) for server {self.server_number} in channel {self.channel_id} of guild {self.guild_id}")
-        if self.type_of_monitor == 1 or self.type_of_monitor == 2:
+        if self.type_of_monitor == 1:
             await self.run_monitor_type_1()
-        elif self.type_of_monitor == 3:
-            await self.run_monitor_type_3()
+        elif self.type_of_monitor == 2:
+            await self.run_monitor_type_2()
         else:
             logging.error(f"Unknown monitor type: {self.type_of_monitor}")
 
@@ -163,9 +161,8 @@ class Monitor:
         sleep_time = max(0, round(last_monitor_timestamp + 60 - now_ts))
         await asyncio.sleep(sleep_time)
 
-
     async def run_monitor_type_2(self):
-        ''' \nA single monitor loop for monitors of type 2.\n'''
+        '''\nA single monitor loop for monitors of type 2.\n'''
 
         eos = EOS()
         try:
@@ -190,125 +187,22 @@ class Monitor:
             logging.error(f"[Monitor.py] Error in run_monitor_type_2: {e}")
             return
 
-        # Fetch user aliases for all puids in one query for efficiency
-        puid_list = [player['puid'] for player in puids_info]
-        puid_to_alias = {}
-
-        if puid_list:
-            # Use get_user_alias for each puid, passing the same conn for efficiency
-            for puid in puid_list:
-                puid_to_alias[puid] = await get_user_alias(puid, conn)
-
-        # Fetch tribe for each player using the smart SQL
-        puid_to_tribe = {}
-        for puid in puid_list:
-            tribe, server_alias = await get_user_tribe_and_most_joined_server(puid, conn)
-            if tribe and tribe != "Unknown":
-                puid_to_tribe[puid] = f"{tribe} ({server_alias})"
-            elif server_alias:
-                puid_to_tribe[puid] = f"{server_alias}"
-            else:
-                puid_to_tribe[puid] = "Unknown"
-
-        # Build player lines, coloring the line green if the player's main server matches this monitor's server_number, else red
-        player_lines = []
-        for idx, player in enumerate(puids_info, 1):
-            alias = puid_to_alias.get(player['puid'], "Unknown")
-            tribe = puid_to_tribe.get(player['puid'], "Unknown")
-            # Extract the main server number from the tribe string (format: "TribeName (server_number)" or just "server_number")
-            main_server = None
-            if "(" in tribe and ")" in tribe:
-                try:
-                    main_server = tribe.split("(")[-1].replace(")", "").strip()
-                except Exception:
-                    main_server = None
-            elif tribe.isdigit():
-                main_server = tribe
-
-            # Use ANSI color codes for code block (Discord will show as plain text, but some clients may parse)
-            line_content = f"[{idx:02d}] | {player['display_name']:<20} ({alias:<15}) | {tribe:<20} | {player['last_login']}"
-            if str(main_server) == str(self.server_number):
-                # Green
-                line = f"\u001b[1;32m{line_content}\u001b[0m"
-            else:
-                # Red
-                line = f"\u001b[1;31m{line_content}\u001b[0m"
-            player_lines.append(line)
-
-        # Count players by main server
-        server_counts = {}
-        for idx, player in enumerate(puids_info, 1):
-            tribe = puid_to_tribe.get(player['puid'], "Unknown")
-            main_server = None
-            if "(" in tribe and ")" in tribe:
-                try:
-                    main_server = tribe.split("(")[-1].replace(")", "").strip()
-                except Exception:
-                    main_server = None
-            elif tribe.isdigit():
-                main_server = tribe
-            if main_server:
-                server_counts[main_server] = server_counts.get(main_server, 0) + 1
-
-        # Split lines into embeds, each with description <= 3700 chars, using code block for alignment
-        embeds = []
-        desc = "```"
-        for i, line in enumerate(player_lines):
-            if len(desc) + len(line) + 1 > 3690:  # leave room for closing ```
-                desc += "```"
-                embed = discord.Embed(
-                    title=f"Players on {custom_server_name} ({total_players}/{max_players})",
-                    description=desc,
-                    colour=discord.Colour.green()
-                )
-                embeds.append(embed)
-                desc = "```"
-            desc += line + "\n"
-        desc += "```"
-
-        # Add server counts summary to the last embed
-        if server_counts:
-            summary = "------------------\n"
-            for server, count in sorted(server_counts.items(), key=lambda x: int(x[0])):
-                summary += f"{server}: {count}\n"
-            desc += summary
-
-        # Calculate Discord timestamp for "updated X ago"
-        now = datetime.now(timezone.utc)
-        discord_timestamp = f"<t:{int(now.timestamp())}:R>"
-
-        if desc.strip("` \n"):
-            # Add "updated X ago" to the title of the first embed
-            first_title = f"Players on {custom_server_name} ({total_players}/{max_players}) • updated {discord_timestamp}"
-            embed = discord.Embed(
-                title=first_title,
-                description=desc,
-                colour=discord.Colour.green()
-            )
-            embeds.append(embed)
+        # Build embeds using the shared function
+        embeds = await build_player_list_embeds(
+            self.server_number, puids_info, custom_server_name, total_players, max_players, conn
+        )
 
         # Purge previous messages before sending new embeds
         guild = discord.utils.get(self.bot.guilds, id=self.guild_id)
         if guild:
             channel = guild.get_channel(self.channel_id)
             if channel:
-                # Purge the last 5 messages from anyone in the channel
                 try:
                     await channel.purge(limit=5)
                 except Exception as e:
                     logging.error(f"[Monitor.py] Failed to purge messages: {e}")
-                # Send all embeds to the channel
                 for embed in embeds:
                     await channel.send(embed=embed)
-
-    async def run_monitor_type_3(self):
-        '''\nA single monitor loop for monitors of type 3.\n'''
-
-        eos = EOS()
-        server_info, total_players, max_players, ip_and_port = await eos.matchmaking(self.server_number)
-
-       
-
 
 async def sort_player_info(puid, tribe):
     pass
