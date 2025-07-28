@@ -62,11 +62,12 @@ class ArkCommands(commands.Cog):
                     server_info, total_players, max_players, ip_and_port = result
                     break
             except Exception as e:
-                pass
+                logging.error(f"[ark_commands.py] Error fetching server info for {server_number}: {e}")
             retries += 1
             await asyncio.sleep(2)
 
         if server_info is None:
+            logging.warning(f"[ark_commands.py] Failed to retrieve info for server {server_number} after {max_retries} attempts.")
             await interaction.followup.send(f"Failed to retrieve info for server `{server_number}` after {max_retries} attempts.", ephemeral=True)
             return
 
@@ -99,6 +100,7 @@ class ArkCommands(commands.Cog):
     ):
         await interaction.response.defer(thinking=True)
         if operator not in ['+', '-', '=']:
+            logging.warning(f"[ark_commands.py] Invalid operator used in /list: {operator}")
             await interaction.followup.send("Operator must be one of: +, -, =", ephemeral=True)
             return
 
@@ -109,6 +111,7 @@ class ArkCommands(commands.Cog):
                     data = await response.text()
             servers = json.loads(data)
         except Exception as e:
+            logging.error(f"[ark_commands.py] Failed to fetch server list: {e}")
             await interaction.followup.send("Failed to fetch server list.", ephemeral=True)
             return
 

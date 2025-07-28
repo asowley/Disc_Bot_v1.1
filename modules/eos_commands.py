@@ -6,6 +6,7 @@ import asyncio
 from tools.EOS import EOS
 from tools.player_display import build_player_list_embeds
 from tools.connector import db_connector
+import logging
 
 class PlayerListView(discord.ui.View):
     def __init__(self, embeds):
@@ -64,6 +65,7 @@ class EOSCommands(commands.Cog):
                 row = await cursor.fetchone()
                 room_id = row[0] if row else 0
             if room_id == 0:
+                logging.warning(f"[eos_commands.py] No EOS ID found for server {server_number}.")
                 await interaction.followup.send(f"No EOS ID found for server {server_number}.", ephemeral=True)
                 return
 
@@ -75,10 +77,12 @@ class EOSCommands(commands.Cog):
                     server_info, total_players, max_players, _ = await eos.matchmaking(server_number)
                     custom_server_name = server_info["attributes"]["CUSTOMSERVERNAME_s"]
                     break
-                except Exception:
+                except Exception as e:
+                    logging.error(f"[eos_commands.py] Error fetching player info for server {server_number}: {e}")
                     retries += 1
 
             if not puids_info:
+                logging.warning(f"[eos_commands.py] Failed to retrieve player info for server {server_number} after {max_retries} attempts.")
                 await interaction.followup.send(f"Failed to retrieve player info for server `{server_number}` after {max_retries} attempts.", ephemeral=True)
                 return
 
@@ -90,6 +94,7 @@ class EOSCommands(commands.Cog):
             await interaction.followup.send(embed=embeds[0], view=view)
 
         except Exception as e:
+            logging.error(f"[eos_commands.py] Unexpected error in /players: {e}")
             await interaction.followup.send(f"Error: {e}", ephemeral=True)
 
     @app_commands.command(
@@ -119,6 +124,7 @@ class EOSCommands(commands.Cog):
                             puid = row['puid']
 
                 if not puid:
+                    logging.warning(f"[eos_commands.py] Player not found in the database for identifier: {identifier}")
                     await interaction.followup.send("Player not found in the database.", ephemeral=True)
                     return
 
@@ -181,8 +187,11 @@ class EOSCommands(commands.Cog):
                 await interaction.followup.send(embed=embed)
                 return
             except Exception as e:
+                logging.error(f"[eos_commands.py] Error in /player_info attempt {attempt+1} for identifier {identifier}: {e}")
                 if attempt == max_retries - 1:
                     await interaction.followup.send(f"Error: {e}", ephemeral=True)
+                else:
+                    await asyncio.sleep(2)
 
 async def setup(bot):
     await bot.add_cog(EOSCommands(bot))

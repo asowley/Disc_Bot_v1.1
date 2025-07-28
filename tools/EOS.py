@@ -6,7 +6,7 @@ import websockets
 import logging
 from datetime import datetime, timezone
 
-from connector import db_connector
+from tools.connector import db_connector
 import aiomysql
 
 
