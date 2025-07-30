@@ -33,7 +33,9 @@ async def build_player_list_embeds(server_number, puids_info, custom_server_name
         elif tribe.isdigit():
             main_server = tribe
 
-        line_content = f"[{idx:02d}] | {player['display_name']:<20} ({alias:<15}) | {tribe:<20} | {player['last_login']}"
+        # Adjust spacing for a tighter layout between name, tribe, and server number
+        # Example: [01] | DisplayName        (Alias)        | Tribe (Server) | LastLogin
+        line_content = f"{player['display_name']:<19} ({alias:<8}) | {tribe:<14} | {player['last_login']}"
         if str(main_server) == str(server_number):
             line = f"\u001b[1;32m{line_content}\u001b[0m"
         else:
@@ -57,7 +59,7 @@ async def build_player_list_embeds(server_number, puids_info, custom_server_name
 
     # Split lines into embeds, each with description <= 3700 chars, using code block for alignment
     embeds = []
-    desc = "```"
+    desc = "```ansi\n"
     for i, line in enumerate(player_lines):
         if len(desc) + len(line) + 1 > 3690:  # leave room for closing ```
             desc += "```"
@@ -75,7 +77,7 @@ async def build_player_list_embeds(server_number, puids_info, custom_server_name
     if server_counts:
         summary = "------------------\n"
         for server, count in sorted(server_counts.items(), key=lambda x: int(x[0])):
-            summary += f"{server}: {count}\n"
+            summary += f"{server}: {count} | "
         desc += summary
 
     # Calculate Discord timestamp for "updated X ago"
@@ -84,7 +86,7 @@ async def build_player_list_embeds(server_number, puids_info, custom_server_name
 
     if desc.strip("` \n"):
         # Add "updated X ago" to the title of the first embed
-        first_title = f"Players on {custom_server_name} ({total_players}/{max_players}) • updated {discord_timestamp}"
+        first_title = f"Players on {custom_server_name} ({total_players}/{max_players}) • Updated {discord_timestamp}"
         embed = discord.Embed(
             title=first_title,
             description=desc,

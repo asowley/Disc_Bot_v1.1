@@ -55,7 +55,7 @@ async def get_user_alias(puid, conn=None):
 
     if result and result['alias']:
         return result['alias']
-    return "Unknown"
+    return "No Alias"
 
 async def get_user_tribe_and_most_joined_server(puid, conn=None):
     """
