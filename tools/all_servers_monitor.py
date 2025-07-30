@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from EOS import EOS
-from connector import db_connector
+from tools.EOS import EOS
+from tools.connector import db_connector
 import aiomysql
 import time
 import json
@@ -22,8 +22,7 @@ def save_state(state):
 async def fetch_players_for_server(eos, ark_server, room_id):
     try:
         players = await eos.players(ark_server, room_id)
-        logging.info(f"[all_servers_monitor.py] Server {ark_server}: {len(players)} players")
-        info = await eos.info(players)
+        # info = await eos.info(players)
         # players_display_name = {player['display_name'] for player in info}
         # print(f"Players info for server {ark_server}: {players_display_name}")
         # print("**********************")
@@ -69,6 +68,8 @@ async def monitor_all_servers():
     # Store results in the database only for new players
     timestamp = int(time.time())
     for ark_server, players in results:
+        #info = await eos.info(players)
+        #print(f"Players info for server {ark_server}: {[player['display_name'] for player in info]}")
         ark_server_str = str(ark_server)
         prev_players = set(state.get(ark_server_str, []))
         current_players = set(players)
@@ -83,7 +84,7 @@ async def monitor_all_servers():
     save_state(state)
     end_time = time.time()
     elapsed = end_time - start_time
-    print(f"[all_servers_monitor.py] Monitoring completed in {elapsed:.2f} seconds.")
+    logging.info(f"[all_servers_monitor.py] Monitoring completed in {elapsed:.2f} seconds.")
     
 
 async def main():
