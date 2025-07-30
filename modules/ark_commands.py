@@ -7,6 +7,7 @@ import aiohttp
 import json
 import logging
 from discord.ui import View, Button
+import datetime
 
 class ServerListView(View):
     def __init__(self, embeds):
@@ -121,6 +122,12 @@ class ArkCommands(commands.Cog):
         count = 0
         page_servers = []
         for server in servers_sorted:
+            # Only include servers in the PVPCrossplay cluster and only PvP servers
+            if server.get("ClusterId", "").upper() != "PVPCROSSPLAY":
+                continue
+            if server.get("SessionIsPve", 0) != 0:
+                continue
+
             add_server = False
             num_players = int(server.get('NumPlayers', 0))
             if operator == '+':
@@ -142,17 +149,23 @@ class ArkCommands(commands.Cog):
             )
             embeds.append(embed)
         else:
-            # Split into pages of 25
-            for i in range(0, len(page_servers), 25):
+            # Split into pages of 12 for better readability with gaps
+            for i in range(0, len(page_servers), 12):
+                now = discord.utils.utcnow()
                 embed = discord.Embed(
-                    title=f"ARK Servers with population {operator}{population} (Page {i//25+1}/{(len(page_servers)-1)//25+1})",
-                    colour=discord.Colour.green()
+                    title=f"PVP SERVERS | POPULATION {operator} {population} (Page {i//12+1}/{(len(page_servers)-1)//12+1})",
+                    colour=discord.Colour.green(),
+                    timestamp=now  # Add the timestamp here
                 )
-                for server in page_servers[i:i+25]:
+                servers_on_page = page_servers[i:i+12]
+                for server in servers_on_page:
                     num_players = int(server.get('NumPlayers', 0))
                     embed.add_field(
                         name=server.get('Name', 'Unknown'),
-                        value=f"Players: {num_players} | Ping: {server.get('ServerPing', 'N/A')} | IP: {server.get('Address', 'N/A')}",
+                        value=(
+                            f"```Players: {num_players}\n"
+                            f"Ping: {server.get('ServerPing', 'N/A')} | IP: {server.get('IP', 'N/A')}:{server.get('Port', 'N/A')}```"
+                        ),
                         inline=False
                     )
                 embeds.append(embed)
