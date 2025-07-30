@@ -49,45 +49,43 @@ class ArkCommands(commands.Cog):
     async def server(self, interaction: discord.Interaction, server_number: str):
         await interaction.response.defer(thinking=True)
         eos = EOS()
-        retries = 0
         max_retries = 3
         server_info = None
         total_players = None
         max_players = None
         ip_and_port = None
 
-        while retries < max_retries:
+        for attempt in range(max_retries):
             try:
                 result = await eos.matchmaking(server_number)
                 if result is not None:
                     server_info, total_players, max_players, ip_and_port = result
                     break
             except Exception as e:
-                logging.error(f"[ark_commands.py] Error fetching server info for {server_number}: {e}")
-            retries += 1
-            await asyncio.sleep(2)
+                logging.error(f"[ark_commands.py] Error fetching server info for {server_number} (attempt {attempt+1}): {e}")
+                await asyncio.sleep(2)
 
         if server_info is None:
             logging.warning(f"[ark_commands.py] Failed to retrieve info for server {server_number} after {max_retries} attempts.")
             await interaction.followup.send(f"Failed to retrieve info for server `{server_number}` after {max_retries} attempts.", ephemeral=True)
             return
 
-        # Extract info
-        server_name = server_info['attributes'].get('SESSIONNAME_s', 'Unknown')
-        ping = server_info['attributes'].get('PING', 'Unknown')
+        custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', 'Unknown')
+        in_game_day = server_info['attributes'].get('DAYTIME_s', 'Unknown')
+        player_count = server_info.get('totalPlayers', 'Unknown')
+        ping = server_info['attributes'].get('EOSSERVERPING_l', 'Unknown')
         now = discord.utils.utcnow()
-        timestamp = f"<t:{int(now.timestamp())}:F>"
 
         embed = discord.Embed(
-            title=f"Server {server_number} Info",
+            title=f"Server Info",
             colour=discord.Colour.blue(),
             timestamp=now
         )
-        embed.add_field(name="Server Name", value=server_name, inline=False)
-        embed.add_field(name="Player Count", value=f"{total_players}/{max_players}", inline=False)
-        embed.add_field(name="Ping", value=str(ping), inline=False)
-        embed.add_field(name="IP:Port", value=ip_and_port, inline=False)
-        embed.set_footer(text=f"Data as of {timestamp}")
+        embed.add_field(name="Server Name", value=f"```ansi\n{custom_server_name}```", inline=False)
+        embed.add_field(name="In-game Day", value=f"```ansi\n{in_game_day}```", inline=False)
+        embed.add_field(name="Player Count", value=f"```ansi\n{player_count}```", inline=True)
+        embed.add_field(name="Ping", value=f"```ansi\n{ping}```", inline=True)
+        embed.add_field(name="IP/Port", value=f"```ansi\n{ip_and_port}```", inline=False)
 
         await interaction.followup.send(embed=embed)
 
@@ -105,15 +103,22 @@ class ArkCommands(commands.Cog):
             await interaction.followup.send("Operator must be one of: +, -, =", ephemeral=True)
             return
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                        "https://cdn2.arkdedicated.com/servers/asa/officialserverlist.json") as response:
-                    data = await response.text()
-            servers = json.loads(data)
-        except Exception as e:
-            logging.error(f"[ark_commands.py] Failed to fetch server list: {e}")
-            await interaction.followup.send("Failed to fetch server list.", ephemeral=True)
+        max_retries = 3
+        servers = []
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                            "https://cdn2.arkdedicated.com/servers/asa/officialserverlist.json") as response:
+                        data = await response.text()
+                servers = json.loads(data)
+                break
+            except Exception as e:
+                logging.error(f"[ark_commands.py] Failed to fetch server list (attempt {attempt+1}): {e}")
+                await asyncio.sleep(2)
+
+        if not servers:
+            await interaction.followup.send("Failed to fetch server list after multiple attempts.", ephemeral=True)
             return
 
         servers_sorted = sorted(servers, key=lambda s: int(s.get('NumPlayers', 0)), reverse=True)
@@ -155,7 +160,7 @@ class ArkCommands(commands.Cog):
                 embed = discord.Embed(
                     title=f"PVP SERVERS | POPULATION {operator} {population} (Page {i//12+1}/{(len(page_servers)-1)//12+1})",
                     colour=discord.Colour.green(),
-                    timestamp=now  # Add the timestamp here
+                    timestamp=now
                 )
                 servers_on_page = page_servers[i:i+12]
                 for server in servers_on_page:
