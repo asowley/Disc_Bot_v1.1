@@ -5,6 +5,7 @@ import random
 import websockets
 import logging
 from datetime import datetime, timezone
+import uuid
 
 from tools.connector import db_connector
 import aiomysql
@@ -18,6 +19,7 @@ async def random_user():
             data = await response.text()
 
     data = data.split()
+    return "000297d4a8da4895b77ee19ac11f3bfb"
     return "LOGGER_Lethal"
     return data[random.randint(1, len(data) - 1)][:-2]  # Adjusted to avoid index out of range
 
@@ -74,6 +76,9 @@ class EOS:
 
     async def players(self, server, room_id):
         uri, ticket, puid = await self.ticket(server, room_id)
+        logging.info(f"[EOS.py] Ticket URI: {uri}, Ticket: {ticket}, PUID: {puid}")
+
+        connection_id = uuid.uuid4().hex.upper()  # Generate a random connection_id
 
         first_message = {
             "type": "join",
@@ -95,21 +100,43 @@ class EOS:
                 "model": "",
                 "manufacturer": "",
                 "online_platform_type": "0"
+            },
+            "status": {
+                "is_muted": 1,
+                "audio_muted_reason": 1,
+                "is_audio_only": 1,
+                "reason_enum": 6,
+                "is_screencast": 0
+            },
+            "connection_id": connection_id,
+            "video": {
+                "width": 0,
+                "height": 0,
+                "codecs": []
             }
         }
 
         async with websockets.connect(uri) as websocket:
             await websocket.send(json.dumps(first_message))
             response = await websocket.recv()
+
+            # Try to get the second message, but don't hang forever
+            try:
+                response = await websocket.recv()
+                
+            except asyncio.TimeoutError:
+                logging.error("[EOS.py] Timed out waiting for second websocket message.")
+                await websocket.close()
+                raise Exception("Timed out waiting for second websocket message.")
+
             await websocket.close()
 
             data = json.loads(response)
+            logging.info(f"[EOS.py] Players response: {data}")
 
         users = []
-
-        for user in data['users']:
+        for user in data.get('users', []):
             json_user = json.loads(user)
-
             puid = json_user['user_token']
             users.append(puid)
 

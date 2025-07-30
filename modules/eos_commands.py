@@ -72,6 +72,7 @@ class EOSCommands(commands.Cog):
             # Retry up to 3 times to get player info
             while retries < max_retries:
                 try:
+                    # Get player puids and info using room_id
                     puids = await eos.players(server_number, room_id)
                     puids_info = await eos.info(puids)
                     server_info, total_players, max_players, _ = await eos.matchmaking(server_number)
