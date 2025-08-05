@@ -22,16 +22,17 @@ def save_state(state):
 async def fetch_players_for_server(eos, ark_server, room_id):
     try:
         players = await eos.players(ark_server, room_id)
+        _, total_players, _, _ = eos.matchmaking(ark_server)
         # info = await eos.info(players)
         # players_display_name = {player['display_name'] for player in info}
         # print(f"Players info for server {ark_server}: {players_display_name}")
         # print("**********************")
-        return ark_server, players
+        return ark_server, players, total_players
     except Exception as e:
         logging.error(f"[all_servers_monitor.py] Error fetching players for server {ark_server}: {e}")
         return ark_server, []
 
-async def store_players_to_db(conn, ark_server, new_players, timestamp):
+async def store_players_to_db(conn, ark_server, new_players, timestamp, total_players=None):
     async with conn.cursor() as cursor:
         for puid in new_players:
             await cursor.execute(
@@ -40,6 +41,14 @@ async def store_players_to_db(conn, ark_server, new_players, timestamp):
                 VALUES (%s, %s, %s)
                 """,
                 (puid, ark_server, timestamp)
+            )
+        if total_players is not None:
+            await cursor.execute(
+                """
+                INSERT INTO ark_servers_history (ark_server, players, time)
+                VALUES (%s, %s, %s)
+                """,
+                (ark_server, total_players, timestamp)
             )
         await conn.commit()
 
@@ -67,7 +76,7 @@ async def monitor_all_servers():
 
     # Store results in the database only for new players
     timestamp = int(time.time())
-    for ark_server, players in results:
+    for ark_server, players, total_players in results:
         #info = await eos.info(players)
         #print(f"Players info for server {ark_server}: {[player['display_name'] for player in info]}")
         ark_server_str = str(ark_server)
@@ -75,7 +84,7 @@ async def monitor_all_servers():
         current_players = set(players)
         new_players = current_players - prev_players
         if new_players:
-            await store_players_to_db(conn, ark_server, new_players, timestamp)
+            await store_players_to_db(conn, ark_server, new_players, timestamp, total_players)
             logging.info(f"[all_servers_monitor.py] Stored {len(new_players)} new players for server {ark_server} at {timestamp}.")
         # Update state
         state[ark_server_str] = list(current_players)
