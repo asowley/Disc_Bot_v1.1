@@ -24,18 +24,29 @@ async def load_modules():
 # Monitor manager code in place, but do not start monitors yet
 from tools.Monitor_Manager import Monitor_Manager
 monitor_manager = Monitor_Manager(bot)
-# Do not call monitor_manager.start_monitors() yet
 
+async def setup_monitor_commands():
+    from modules import monitor_commands
+    await bot.add_cog(monitor_commands.MonitorCommands(bot, monitor_manager))
+    logging.info("MonitorCommands cog loaded successfully.")
+
+# In your on_ready or startup logic, call:
 @bot.event
 async def on_ready():
     logging.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
     await load_modules()
+    await setup_monitor_commands()
     try:
         synced = await bot.tree.sync()
         logging.info(f"Synced {len(synced)} commands.")
     except Exception as e:
         logging.error(f"Failed to sync commands: {e}")
-    logging.info("All modules loaded.")
+
+    # Load and start monitors
+    await monitor_manager.load_monitors_from_db()
+    await monitor_manager.start_monitors()
+    logging.info("All modules and monitors loaded.")
+    
 
 if __name__ == "__main__":
     logging.basicConfig(
