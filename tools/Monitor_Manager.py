@@ -2,20 +2,40 @@ import logging
 from tools.Monitor import Monitor
 from tools.connector import db_connector
 import aiomysql
+import asyncio
+from tools.all_servers_monitor import monitor_all_servers
 
 class Monitor_Manager:
     def __init__(self, bot):
         self.monitors = {}
         self.bot = bot
+        self.all_servers_monitor_task = None
 
     async def start_monitors(self):
+        # Start all individual monitors
+        print(self.monitors)
         for monitor in self.monitors.values():
-            await monitor.start()
+            monitor.start()  # <-- No await needed
+        # Start or restart the all_servers_monitor as a background task
+        async def run_all_servers_monitor_with_restart():
+            while True:
+                try:
+                    await monitor_all_servers()
+                except asyncio.CancelledError:
+                    logging.info("all_servers_monitor task cancelled.")
+                    break
+                except Exception as e:
+                    logging.error(f"all_servers_monitor crashed with error: {e}, restarting in 5 seconds.")
+                    await asyncio.sleep(5)
+        # if not self.all_servers_monitor_task or self.all_servers_monitor_task.done():
+        #     loop = asyncio.get_running_loop()
+        #     self.all_servers_monitor_task = loop.create_task(run_all_servers_monitor_with_restart())
+        #     logging.info("Started all_servers_monitor as a background task.")
 
     async def load_monitors_from_db(self):
         conn = await db_connector()
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("SELECT ark_server, type, channel_id, guild_id FROM monitors_new")
+            await cursor.execute("SELECT ark_server, type, channel_id, guild_id FROM monitors_new_upd")
             rows = await cursor.fetchall()
             for row in rows:
                 key = (row['ark_server'], row['type'], row['channel_id'])
@@ -31,25 +51,13 @@ class Monitor_Manager:
         logging.info(f"Loaded {len(self.monitors)} monitors from database.")
 
     async def add_monitor(self, server_number, type_of_monitor, channel_id, guild_id):
-        # Optionally, you can insert the new monitor into the DB here as well
-        if (server_number, type_of_monitor, channel_id) in self.monitors:
+        key = (server_number, type_of_monitor, channel_id)
+        if key in self.monitors:
             logging.warning(f"Monitor for server {server_number}, type {type_of_monitor}, channel {channel_id} already exists.")
             return
 
-        # Add to database
-        conn = await db_connector()
-        async with conn.cursor() as cursor:
-            await cursor.execute(
-                """
-                INSERT INTO monitors_new (ark_server, type, channel_id, guild_id)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (server_number, type_of_monitor, channel_id, guild_id)
-            )
-            await conn.commit()
-
         monitor = Monitor(server_number, type_of_monitor, channel_id, guild_id, self.bot)
-        self.monitors[(server_number, type_of_monitor, channel_id)] = monitor
+        self.monitors[key] = monitor
         await monitor.start()
         logging.info(f"Added monitor for server {server_number}, type {type_of_monitor}, channel {channel_id}, guild {guild_id}.")
 
@@ -58,18 +66,6 @@ class Monitor_Manager:
         if key not in self.monitors:
             logging.warning(f"Monitor for server {server_number}, type {type_of_monitor}, channel {channel_id} does not exist.")
             return
-
-        # Remove from database
-        conn = await db_connector()
-        async with conn.cursor() as cursor:
-            await cursor.execute(
-                """
-                DELETE FROM monitors_new
-                WHERE ark_server = %s AND type = %s AND channel_id = %s AND guild_id = %s
-                """,
-                (server_number, type_of_monitor, channel_id, guild_id)
-            )
-            await conn.commit()
 
         monitor = self.monitors.pop(key)
         await monitor.stop()
