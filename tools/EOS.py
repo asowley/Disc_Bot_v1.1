@@ -76,7 +76,7 @@ class EOS:
 
     async def players(self, server, room_id):
         uri, ticket, puid = await self.ticket(server, room_id)
-        logging.info(f"[EOS.py] Ticket URI: {uri}, Ticket: {ticket}, PUID: {puid}")
+        # logging.info(f"[EOS.py] Ticket URI: {uri}, Ticket: {ticket}, PUID: {puid}")
 
         connection_id = uuid.uuid4().hex.upper()  # Generate a random connection_id
 
@@ -132,7 +132,6 @@ class EOS:
             await websocket.close()
 
             data = json.loads(response)
-            logging.info(f"[EOS.py] Players response: {data}")
 
         users = []
         for user in data.get('users', []):
