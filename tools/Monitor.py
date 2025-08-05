@@ -33,6 +33,8 @@ class Monitor:
 
     def start(self):
         # Start the monitor as an asyncio task
+        logging.info(f"Starting monitor (type {self.type_of_monitor}) for server {self.server_number} in channel {self.channel_id} of guild {self.guild_id}")
+
         if self.task is None or self.task.done():
             self.stopped = False
             self.task = asyncio.create_task(self._run_with_restart())
@@ -49,6 +51,7 @@ class Monitor:
 
     async def _run_with_restart(self):
         # Internal: run the monitor, restart if cancelled
+        
         while True:
             try:
                 await self._run_monitor()
