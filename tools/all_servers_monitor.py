@@ -20,17 +20,22 @@ def save_state(state):
         json.dump(state, f)
 
 async def fetch_players_for_server(eos, ark_server, room_id):
+    """
+    Fetch players for a specific server.
+    """
     try:
-        players = await eos.players(ark_server, room_id)
-        _, total_players, _, _ = eos.matchmaking(ark_server)
-        # info = await eos.info(players)
-        # players_display_name = {player['display_name'] for player in info}
-        # print(f"Players info for server {ark_server}: {players_display_name}")
-        # print("**********************")
+        # Simulate fetching player data (replace with actual logic)
+        result = await eos.matchmaking(ark_server)  # Example: Fetch data from EOS
+        if result is None:
+            logging.warning(f"No data returned for server {ark_server}.")
+            return ark_server, [], 0  # Return empty player list and total players as 0
+
+        server_info, players, total_players, _ = result
+        logging.info(f"Fetched {len(players)} players for server {ark_server}.")
         return ark_server, players, total_players
     except Exception as e:
-        logging.error(f"[all_servers_monitor.py] Error fetching players for server {ark_server}: {e}")
-        return ark_server, []
+        logging.error(f"Error fetching players for server {ark_server}: {e}")
+        return ark_server, [], 0  # Return empty player list and total players as 0
 
 async def store_players_to_db(conn, ark_server, new_players, timestamp, total_players=None):
     async with conn.cursor() as cursor:
