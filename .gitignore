@@ -3,3 +3,5 @@ bot.log
 config.ini
 *.pyc
 *.json
+graphs/
+*.png
