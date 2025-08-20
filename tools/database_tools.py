@@ -1,9 +1,15 @@
 import datetime
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
-from pytz import utc, timezone
+from pytz import utc, timezone as pytz_timezone
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import matplotlib.ticker as ticker
+import discord
+import os
 
+from tools.EOS import EOS
 from tools.connector import db_connector
 import aiomysql
 
@@ -13,21 +19,14 @@ async def store_info_to_db(server_number, players):
 
     conn = await db_connector()
 
-    local_dt = datetime.now()
-
-    local_tz = timezone('Brazil/East')
-
-    local_dt_with_tz = local_dt.astimezone(local_tz)
-
-    utc_dt = local_dt_with_tz.astimezone(utc)
-
-    epoch_time = utc_dt.timestamp()
+    # Get the current UTC time and convert it to a Unix timestamp
+    epoch_time = int(datetime.now(timezone.utc).timestamp())
 
     async with conn.cursor() as cursor:
         await cursor.execute("""
             INSERT INTO ark_servers_history (ark_server, players, time)
             VALUES (%s, %s, %s)
-        """, (server_number, players, int(epoch_time)))
+        """, (server_number, players, epoch_time))
         await conn.commit()  # Commit the transaction
 
     return None
@@ -93,3 +92,66 @@ async def get_user_tribe_and_most_joined_server(puid, conn=None):
     if close_conn:
         conn.close()
     return "Unknown", None
+
+async def create_history_graph(server_number: str, amount: int):
+    try:
+        # Calculate the time delta
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(hours=amount)
+
+        # Fetch data from the database
+        conn = await db_connector()
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute("""
+                SELECT players, time
+                FROM ark_servers_history
+                WHERE ark_server = %s AND time >= %s
+            """, (server_number, int(start_time.timestamp())))
+            data = await cursor.fetchall()
+
+        if not data:
+            logging.warning(f"No data found for server {server_number} in the last {amount} hours.")
+            return None
+
+        # Extract players and time data
+        players_data = [record['players'] for record in data]
+        time_data = [datetime.fromtimestamp(record['time'], timezone.utc) for record in data]
+
+        # Fetch max players using EOS matchmaking
+        eos = EOS()
+        _, _, max_players, _ = await eos.matchmaking(server_number)
+        if not max_players:
+            max_players = 70  # Default to 70 if max_players is not available
+
+        # Create the graph
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(time_data, players_data, label="Players", color="blue", linewidth=2)
+
+        # Set graph title and labels
+        ax.set_title(f"Server {server_number} Player History (Last {amount} Hours)", fontsize=14, weight="bold")
+        ax.set_xlabel("Time (UTC)", fontsize=12)
+        ax.set_ylabel("Players", fontsize=12)
+
+        # Format the x-axis for time
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, amount // 6)))
+        ax.xaxis.set_minor_locator(mdates.MinuteLocator(interval=15))
+        ax.grid(True, which='major', linestyle='--', linewidth=0.5, alpha=0.7)
+        ax.grid(True, which='minor', linestyle=':', linewidth=0.3, alpha=0.5)
+
+        # Format the y-axis
+        ax.yaxis.set_major_locator(ticker.MultipleLocator(5))
+        ax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
+        ax.set_ylim(0, max_players)  # Set the y-axis limit to max players
+
+        # Save the graph to a temporary file
+        fname = f"graphs/{server_number}_{int(end_time.timestamp())}.png"
+        os.makedirs("graphs", exist_ok=True)
+        fig.savefig(fname=fname)
+        plt.close(fig)  # Close the figure to release the file
+
+        return fname  # Return the file path instead of the Discord file object
+
+    except Exception as e:
+        logging.warning(f"Could not generate graph for server {server_number}: {e}")
+        return None
