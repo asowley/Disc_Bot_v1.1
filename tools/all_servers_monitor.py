@@ -52,7 +52,10 @@ async def store_players_to_db(conn, ark_server, new_players, timestamp, total_pl
             )
         await conn.commit()
 
-async def monitor_all_servers():
+async def monitor_all_servers(batch_size=50):
+    """
+    Monitor all servers in batches to prevent WebSocket idle timeouts.
+    """
     start_time = time.time()
     eos = EOS()
     conn = await db_connector()
@@ -65,29 +68,38 @@ async def monitor_all_servers():
         await cursor.execute("SELECT ark_server, room_id, tribe FROM ark_servers_new")
         servers = await cursor.fetchall()
 
-    # Prepare tasks for all servers (room_id of 0 is allowed)
-    tasks = [
-        fetch_players_for_server(eos, server['ark_server'], server['room_id'])
-        for server in servers
-    ]
+    total_servers = len(servers)
+    logging.info(f"[all_servers_monitor.py] Starting monitoring for {total_servers} servers in batches of {batch_size}.")
 
-    # Run all tasks concurrently
-    results = await asyncio.gather(*tasks)
+    # Process servers in batches
+    for i in range(0, total_servers, batch_size):
+        batch = servers[i:i + batch_size]
+        logging.info(f"[all_servers_monitor.py] Processing batch {i // batch_size + 1} with {len(batch)} servers.")
 
-    # Store results in the database only for new players
-    timestamp = int(time.time())
-    for ark_server, players, total_players in results:
-        #info = await eos.info(players)
-        #print(f"Players info for server {ark_server}: {[player['display_name'] for player in info]}")
-        ark_server_str = str(ark_server)
-        prev_players = set(state.get(ark_server_str, []))
-        current_players = set(players)
-        new_players = current_players - prev_players
-        if new_players:
-            await store_players_to_db(conn, ark_server, new_players, timestamp, total_players)
-            logging.info(f"[all_servers_monitor.py] Stored {len(new_players)} new players for server {ark_server} at {timestamp}.")
-        # Update state
-        state[ark_server_str] = list(current_players)
+        # Prepare tasks for the current batch
+        tasks = [
+            fetch_players_for_server(eos, server['ark_server'], server['room_id'])
+            for server in batch
+        ]
+
+        # Run all tasks concurrently for the current batch
+        results = await asyncio.gather(*tasks)
+
+        # Store results in the database only for new players
+        timestamp = int(time.time())
+        for ark_server, players, total_players in results:
+            ark_server_str = str(ark_server)
+            prev_players = set(state.get(ark_server_str, []))
+            current_players = set(players)
+            new_players = current_players - prev_players
+            if new_players:
+                await store_players_to_db(conn, ark_server, new_players, timestamp, total_players)
+                logging.info(f"[all_servers_monitor.py] Stored {len(new_players)} new players for server {ark_server} at {timestamp}.")
+            # Update state
+            state[ark_server_str] = list(current_players)
+
+        # Optional: Add a delay between batches to avoid overwhelming the system
+        await asyncio.sleep(5)
 
     # Save updated state to file
     save_state(state)
