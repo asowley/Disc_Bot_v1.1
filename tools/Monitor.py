@@ -9,7 +9,7 @@ import discord
 from tools.EOS import EOS
 from tools.player_display import build_player_list_embeds
 from tools.connector import db_connector
-from tools.database_tools import get_user_tribe_and_most_joined_server
+from tools.database_tools import get_user_tribe_and_most_joined_server, create_history_graph  # Import the function
 
 class Monitor:
     '''
@@ -22,14 +22,25 @@ class Monitor:
     bot: The Discord bot instance.
     '''
 
-    def __init__(self, server_number, type_of_monitor, channel_id, guild_id, bot):
+    def __init__(self, server_number, type_of_monitor, channel_id, guild_id, bot, alert_channel_id=None, population_change_threshold=None):
         self.server_number = server_number
         self.type_of_monitor = int(type_of_monitor)  # Ensure it's always an int
         self.channel_id = channel_id
+        self.alert_channel_id = alert_channel_id  # Initialize alert channel ID
+        self.population_change_threshold = population_change_threshold  # Initialize population change threshold
         self.guild_id = guild_id
         self.bot = bot
         self.task = None
         self.stopped = False
+        logging.info(
+            f"Monitor initialized: "
+            f"server_number={self.server_number}, "
+            f"type_of_monitor={self.type_of_monitor}, "
+            f"channel_id={self.channel_id}, "
+            f"alert_channel_id={self.alert_channel_id}, "
+            f"population_change_threshold={self.population_change_threshold}, "
+            f"guild_id={self.guild_id}"
+        )
 
     def start(self):
         # Start the monitor as an asyncio task
@@ -76,10 +87,20 @@ class Monitor:
             logging.error(f"Unknown monitor type: {self.type_of_monitor}")
 
     async def run_monitor_type_1(self):
-        '''\nA single monitor loop for monitors of type 1.\n'''
-
+        '''A single monitor loop for monitors of type 1.'''
         eos = EOS()
-        server_info, total_players, _, _ = await eos.matchmaking(self.server_number)
+
+        # Attempt to fetch server info
+        try:
+            server_info, total_players, _, _ = await eos.matchmaking(self.server_number)
+        except Exception as e:
+            logging.error(f"[Monitor.py] Failed to fetch server info for server {self.server_number}: {e}")
+            server_info = None
+            total_players = None
+
+        # Default total_players to 0 if matchmaking fails
+        if total_players is None:
+            total_players = 0
 
         # --- JSON persistence setup ---
         monitors_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "monitors_minutes")
@@ -102,7 +123,52 @@ class Monitor:
         if population_counts:
             balance = total_players - population_counts[-1]
 
-        # --- Discord embed logic (unchanged) ---
+        # --- Generate the history graph at the start ---
+        graph_path = await create_history_graph(self.server_number, 1)  # Last hour
+
+        # --- Check for alerts ---
+        if self.alert_channel_id and self.population_change_threshold is not None and total_players > 0:
+            guild = discord.utils.get(self.bot.guilds, id=self.guild_id)
+            if guild:
+                alert_channel = guild.get_channel(self.alert_channel_id)  # Use the alert channel
+                if alert_channel:
+                    # Check if the population change in the last 5 minutes meets the threshold
+                    if len(population_counts) >= 5:
+                        population_5_minutes_ago = population_counts[-5]
+                        population_change = total_players - population_5_minutes_ago
+
+                        if abs(population_change) >= abs(self.population_change_threshold):
+                            # Send an alert
+                            try:
+                                alert_type = "joined" if population_change > 0 else "left"
+                                embed = discord.Embed(
+                                    title=f"ALERT: Population Change Detected on Server {self.server_number}",
+                                    description=(f"Population has {alert_type} by {abs(population_change)} "
+                                                 f"in the last 5 minutes.\nThreshold: {self.population_change_threshold}"),
+                                    colour=discord.Colour.red(),
+                                    timestamp=datetime.now()
+                                )
+                                embed.add_field(name="Current Population", value=total_players, inline=False)
+
+                                # Retry sending the embed with the graph up to 3 times
+                                for attempt in range(3):
+                                    try:
+                                        if graph_path:
+                                            with open(graph_path, "rb") as f:
+                                                file_disc = discord.File(f, filename="image.png")
+                                                embed.set_image(url="attachment://image.png")
+                                                await alert_channel.send(embed=embed, file=file_disc)
+                                        else:
+                                            await alert_channel.send(embed=embed)
+                                        break  # Exit the retry loop if successful
+                                    except Exception as e:
+                                        logging.error(f"[Monitor.py] Failed to send alert message or graph (attempt {attempt + 1}): {e}")
+                                        if attempt == 2:  # If the last attempt fails, log it
+                                            logging.error(f"[Monitor.py] Giving up on sending alert after 3 attempts.")
+                            except Exception as e:
+                                logging.error(f"[Monitor.py] Failed to send alert message or graph: {e}")
+
+        # --- Discord embed logic ---
         if abs(balance) > 0:
             embed = discord.Embed(title=f"Monitor {self.server_number}", timestamp=datetime.now())
 
@@ -115,7 +181,7 @@ class Monitor:
 
             embed.add_field(
                 name="Server Name",
-                value=server_info['attributes']['SESSIONNAME_s'],
+                value=server_info['attributes']['SESSIONNAME_s'] if server_info else "Unknown",
                 inline=False
             )
             embed.add_field(
@@ -135,9 +201,23 @@ class Monitor:
                 channel = guild.get_channel(self.channel_id)
                 if channel:
                     try:
-                        await channel.send(embed=embed)
+                        # Retry sending the embed with the graph up to 3 times
+                        for attempt in range(3):
+                            try:
+                                if graph_path:
+                                    with open(graph_path, "rb") as f:
+                                        file_disc = discord.File(f, filename="image.png")
+                                        embed.set_image(url="attachment://image.png")
+                                        await channel.send(embed=embed, file=file_disc)
+                                else:
+                                    await channel.send(embed=embed)
+                                break  # Exit the retry loop if successful
+                            except Exception as e:
+                                logging.error(f"[Monitor.py] Failed to send monitor message or graph (attempt {attempt + 1}): {e}")
+                                if attempt == 2:  # If the last attempt fails, log it
+                                    logging.error(f"[Monitor.py] Giving up on sending monitor message after 3 attempts.")
                     except Exception as e:
-                        logging.error(f"[Monitor.py] Failed to send monitor message: {e}")
+                        logging.error(f"[Monitor.py] Failed to send monitor message or graph: {e}")
 
         # --- Channel rename logic ---
         now_ts = int(datetime.now().timestamp())
@@ -161,7 +241,7 @@ class Monitor:
         population_counts.append(total_players)
         if len(population_counts) > 60:
             population_counts = population_counts[-60:]
-        last_monitor_timestamp = now_ts
+        last_monitor_timestamp = int(datetime.now().timestamp())
 
         # Save updated data
         with open(json_path, "w") as f:
@@ -172,9 +252,9 @@ class Monitor:
                 "last_channel_rename": last_channel_rename
             }, f)
 
-        # --- Adjust sleep to keep interval consistent ---
-        sleep_time = max(0, round(last_monitor_timestamp + 60 - now_ts))
-        await asyncio.sleep(sleep_time)
+        # --- Cleanup the graph file ---
+        if graph_path:
+            os.remove(graph_path)
 
     async def run_monitor_type_2(self):
         '''\nA single monitor loop for monitors of type 2.\n'''
