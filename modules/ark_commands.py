@@ -8,6 +8,8 @@ import json
 import logging
 from discord.ui import View, Button
 import datetime
+from tools.database_tools import create_history_graph  # Import the function
+import os
 
 class ServerListView(View):
     def __init__(self, embeds):
@@ -50,44 +52,59 @@ class ArkCommands(commands.Cog):
         await interaction.response.defer(thinking=True)
         eos = EOS()
         max_retries = 3
-        server_info = None
-        total_players = None
-        max_players = None
-        ip_and_port = None
 
         for attempt in range(max_retries):
             try:
+                # Prepare the graph before sending the first embed
+                graph_path = await create_history_graph(server_number, 2)  # Last 2 hours
+
+                # Fetch server info
                 result = await eos.matchmaking(server_number)
-                if result is not None:
-                    server_info, total_players, max_players, ip_and_port = result
-                    break
+                if result is None:
+                    raise Exception(f"Failed to fetch server info for {server_number} (attempt {attempt + 1})")
+
+                server_info, total_players, max_players, ip_and_port = result
+
+                # Prepare the embed
+                custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', 'Unknown')
+                in_game_day = server_info['attributes'].get('DAYTIME_s', 'Unknown')
+                player_count = server_info.get('totalPlayers', 'Unknown')
+                ping = server_info['attributes'].get('EOSSERVERPING_l', 'Unknown')
+                now = discord.utils.utcnow()
+
+                embed = discord.Embed(
+                    title=f"Server Info",
+                    colour=discord.Colour.blue(),
+                    timestamp=now
+                )
+                embed.add_field(name="Server Name", value=f"```ansi\n{custom_server_name}```", inline=False)
+                embed.add_field(name="In-game Day", value=f"```ansi\n{in_game_day}```", inline=False)
+                embed.add_field(name="Player Count", value=f"```ansi\n{player_count}```", inline=True)
+                embed.add_field(name="Ping", value=f"```ansi\n{ping}```", inline=True)
+                embed.add_field(name="IP/Port", value=f"```ansi\n{ip_and_port}```", inline=False)
+
+                # Attach the graph to the embed if it exists
+                if graph_path:
+                    with open(graph_path, "rb") as f:
+                        file_disc = discord.File(f, filename="image.png")
+                        embed.set_image(url="attachment://image.png")  # Attach the graph to the embed
+                        await interaction.followup.send(embed=embed, file=file_disc)
+                else:
+                    # Send only the embed if the graph couldn't be generated
+                    await interaction.followup.send(embed=embed)
+
+                # Cleanup the graph file if it was created
+                if graph_path:
+                    os.remove(graph_path)
+
+                # Exit the loop if successful
+                return
+
             except Exception as e:
-                logging.error(f"[ark_commands.py] Error fetching server info for {server_number} (attempt {attempt+1}): {e}")
-                await asyncio.sleep(2)
+                logging.error(f"[ark_commands.py] Error in /server command for {server_number} (attempt {attempt + 1}): {e}")
 
-        if server_info is None:
-            logging.warning(f"[ark_commands.py] Failed to retrieve info for server {server_number} after {max_retries} attempts.")
-            await interaction.followup.send(f"Failed to retrieve info for server `{server_number}` after {max_retries} attempts.", ephemeral=True)
-            return
-
-        custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', 'Unknown')
-        in_game_day = server_info['attributes'].get('DAYTIME_s', 'Unknown')
-        player_count = server_info.get('totalPlayers', 'Unknown')
-        ping = server_info['attributes'].get('EOSSERVERPING_l', 'Unknown')
-        now = discord.utils.utcnow()
-
-        embed = discord.Embed(
-            title=f"Server Info",
-            colour=discord.Colour.blue(),
-            timestamp=now
-        )
-        embed.add_field(name="Server Name", value=f"```ansi\n{custom_server_name}```", inline=False)
-        embed.add_field(name="In-game Day", value=f"```ansi\n{in_game_day}```", inline=False)
-        embed.add_field(name="Player Count", value=f"```ansi\n{player_count}```", inline=True)
-        embed.add_field(name="Ping", value=f"```ansi\n{ping}```", inline=True)
-        embed.add_field(name="IP/Port", value=f"```ansi\n{ip_and_port}```", inline=False)
-
-        await interaction.followup.send(embed=embed)
+        # If all retries fail, send an error message
+        await interaction.followup.send(f"Failed to retrieve info for server `{server_number}` after {max_retries} attempts.", ephemeral=True)
 
     @app_commands.command(name="list", description="List ARK servers by population (e.g. /list 60 + for >=60 players)")
     @app_commands.describe(population="Population number", operator="Operator: + for >=, - for <=, = for exact")
