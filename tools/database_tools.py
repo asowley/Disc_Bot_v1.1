@@ -14,8 +14,8 @@ from tools.connector import db_connector
 import aiomysql
 
 
-async def store_info_to_db(server_number, players):
-    logging.debug(f"[store_info] Store info {server_number} {players}")
+async def store_info_to_db(server_number, num_players):
+    logging.debug(f"[store_info] Store info {server_number} {num_players}")
 
     conn = await db_connector()
 
@@ -26,7 +26,7 @@ async def store_info_to_db(server_number, players):
         await cursor.execute("""
             INSERT INTO ark_servers_history (ark_server, players, time)
             VALUES (%s, %s, %s)
-        """, (server_number, players, epoch_time))
+        """, (server_number, num_players, epoch_time))
         await conn.commit()  # Commit the transaction
 
     return None

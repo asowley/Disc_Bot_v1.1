@@ -9,7 +9,7 @@ import discord
 from tools.EOS import EOS
 from tools.player_display import build_player_list_embeds
 from tools.connector import db_connector
-from tools.database_tools import get_user_tribe_and_most_joined_server, create_history_graph  # Import the function
+from tools.database_tools import get_user_tribe_and_most_joined_server, create_history_graph, store_info_to_db  # Import the function
 
 class Monitor:
     '''
@@ -101,6 +101,12 @@ class Monitor:
         # Default total_players to 0 if matchmaking fails
         if total_players is None:
             total_players = 0
+
+        # --- Store player count in DB ---
+        try:
+            await store_info_to_db(self.server_number, total_players)
+        except Exception as e:
+            logging.error(f"[Monitor.py] Failed to store player count in DB for server {self.server_number}: {e}")
 
         # --- JSON persistence setup ---
         monitors_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "monitors_minutes")
