@@ -21,18 +21,23 @@ def save_state(state):
 
 async def fetch_players_for_server(eos, ark_server, room_id):
     """
-    Fetch players for a specific server.
+    Fetch players for a specific server using the EOS players and matchmaking methods.
     """
     try:
-        # Simulate fetching player data (replace with actual logic)
-        result = await eos.matchmaking(ark_server)  # Example: Fetch data from EOS
-        if result is None:
-            logging.warning(f"No data returned for server {ark_server}.")
-            return ark_server, [], 0  # Return empty player list and total players as 0
+        # Fetch player data using the EOS players method
+        players = await eos.players(ark_server, room_id)
 
-        server_info, players, total_players, _ = result
-        logging.info(f"Fetched {len(players)} players for server {ark_server}.")
-        return ark_server, players, total_players
+        # Fetch total player count using the EOS matchmaking method
+        matchmaking_result = await eos.matchmaking(ark_server)
+        if matchmaking_result is None:
+            logging.warning(f"No matchmaking data returned for server {ark_server}.")
+            total_players = 0
+        else:
+            _, total_players, _, _ = matchmaking_result
+
+        # Log the number of players fetched
+        logging.info(f"Fetched {len(players)} players and total players {total_players} for server {ark_server}.")
+        return ark_server, players, total_players  # Return server, player list, and total player count
     except Exception as e:
         logging.error(f"Error fetching players for server {ark_server}: {e}")
         return ark_server, [], 0  # Return empty player list and total players as 0
