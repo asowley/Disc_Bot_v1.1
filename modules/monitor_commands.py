@@ -14,16 +14,14 @@ class MonitorCommands(commands.Cog):
     @app_commands.describe(
         server_number="The ARK server number (required)",
         monitor_type="Monitor type (default: 1)",
-        nickname="Optional nickname for this monitor",
-        nature="Nature (default: 1)"
+        nickname="Optional nickname for this monitor"
     )
     async def monitor(
         self,
         interaction,
         server_number: str,
         monitor_type: str = "1",
-        nickname: str = "",
-        nature: str = "1"
+        nickname: str = ""
     ):
         await interaction.response.defer(thinking=True)
         max_retries = 3
@@ -34,14 +32,13 @@ class MonitorCommands(commands.Cog):
                     # Check if monitor already exists
                     await cursor.execute("""
                         SELECT 1 FROM monitors_new_upd
-                        WHERE channel_id = %s AND type = %s AND ark_server = %s AND guild_id = %s AND nickname = %s AND nature = %s
+                        WHERE channel_id = %s AND type = %s AND ark_server = %s AND guild_id = %s AND nickname = %s
                     """, (
                         interaction.channel_id,
                         monitor_type,
                         server_number,
                         interaction.guild_id,
-                        nickname,
-                        nature
+                        nickname
                     ))
                     exists = await cursor.fetchone()
                     if exists:
@@ -53,15 +50,14 @@ class MonitorCommands(commands.Cog):
 
                     # Insert new monitor
                     await cursor.execute("""
-                        INSERT INTO monitors_new_upd (channel_id, type, ark_server, guild_id, nickname, nature)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO monitors_new_upd (channel_id, type, ark_server, guild_id, nickname)
+                        VALUES (%s, %s, %s, %s, %s)
                     """, (
                         interaction.channel_id,
                         monitor_type,
                         server_number,
                         interaction.guild_id,
-                        nickname,
-                        nature
+                        nickname
                     ))
                     await conn.commit()
                 await interaction.followup.send(f"Monitor added for server `{server_number}` in this channel.", ephemeral=True)
