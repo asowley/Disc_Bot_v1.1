@@ -279,6 +279,12 @@ class Monitor:
                 "last_channel_rename": last_channel_rename
             }, f)
 
+        # --- Wait for the next update ---
+        current_timestamp = int(datetime.now().timestamp())
+        wait_time = (last_monitor_timestamp + 60) - current_timestamp
+        if wait_time > 0:
+            await asyncio.sleep(round(wait_time))
+
         # --- Cleanup the graph file ---
         if graph_path:
             os.remove(graph_path)
