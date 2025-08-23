@@ -40,28 +40,12 @@ class Monitor_Manager:
         """
         conn = await db_connector()
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            # Fetch all monitors from the database
+            # Fetch all monitors from the monitors_new_upd table
             await cursor.execute("""
                 SELECT ark_server, type, channel_id, guild_id
                 FROM monitors_new_upd
             """)
             monitors = await cursor.fetchall()
-
-            # Fetch all alerts from the database
-            await cursor.execute("""
-                SELECT server_number, guild_id, alert_channel, population_change
-                FROM alert_servers
-            """)
-            alerts = await cursor.fetchall()
-
-            # Create a mapping of (server_number, guild_id) to alert data
-            alert_mapping = {
-                (alert['server_number'], alert['guild_id']): {
-                    'alert_channel': alert['alert_channel'],
-                    'population_change': alert['population_change']
-                }
-                for alert in alerts
-            }
 
             # Initialize monitors
             for monitor_data in monitors:
@@ -70,20 +54,13 @@ class Monitor_Manager:
                 channel_id = monitor_data['channel_id']
                 guild_id = monitor_data['guild_id']
 
-                # Get alert data if it exists
-                alert_data = alert_mapping.get((server_number, guild_id))
-                alert_channel_id = alert_data['alert_channel'] if alert_data else None
-                population_change_threshold = alert_data['population_change'] if alert_data else None
-
                 # Create a new Monitor instance
                 monitor = Monitor(
                     server_number,
                     type_of_monitor,
                     channel_id,
                     guild_id,
-                    self.bot,
-                    alert_channel_id=alert_channel_id,
-                    population_change_threshold=population_change_threshold
+                    self.bot
                 )
 
                 # Start the monitor
@@ -91,6 +68,33 @@ class Monitor_Manager:
 
                 # Add the monitor to the list
                 self.monitors.append(monitor)
+
+            # Fetch all alerts from the alert_servers table
+            await cursor.execute("""
+                SELECT server_number, guild_id, population_change, alert_channel
+                FROM alert_servers
+            """)
+            alerts = await cursor.fetchall()
+
+            # Add alerts to the corresponding monitors
+            for alert_data in alerts:
+                server_number = alert_data['server_number']
+                guild_id = alert_data['guild_id']
+                population_change_threshold = alert_data['population_change']
+                alert_channel_id = alert_data['alert_channel']
+
+                success = await self.add_alert_to_monitor(
+                    server_number=server_number,
+                    guild_id=guild_id,
+                    alert_channel_id=alert_channel_id,
+                    population_change_threshold=population_change_threshold
+                )
+
+                if success:
+                    logging.info(f"Loaded alert for monitor: server_number={server_number}, guild_id={guild_id}, "
+                                 f"alert_channel_id={alert_channel_id}, population_change_threshold={population_change_threshold}")
+                else:
+                    logging.warning(f"Failed to load alert for monitor: server_number={server_number}, guild_id={guild_id}")
 
         logging.info(f"Loaded {len(self.monitors)} monitors from database.")
 

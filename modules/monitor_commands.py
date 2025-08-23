@@ -123,56 +123,112 @@ class MonitorCommands(commands.Cog):
         server_number="The ARK server number to monitor.",
         population_change_threshold="The population change required to trigger the alert. Negative for players left, Positive for players joined."
     )
-    async def add_alert(self, interaction, server_number: int, population_change_threshold: int):
+    async def add_alert(self, interaction, server_number: str, population_change_threshold: int):
         """
         Add an alert to an existing monitor.
         """
         guild_id = interaction.guild_id  # Get the guild ID from the interaction
         alert_channel_id = interaction.channel_id  # Use the channel where the command was invoked
 
-        success = await self.monitor_manager.add_alert_to_monitor(
-            server_number=server_number,
-            guild_id=guild_id,
-            alert_channel_id=alert_channel_id,
-            population_change_threshold=population_change_threshold
-        )
+        # Insert or update the alert in the alert_servers table
+        conn = await db_connector()
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # Check if an alert already exists for this server and guild
+                await cursor.execute("""
+                    SELECT 1 FROM alert_servers
+                    WHERE server_number = %s AND guild_id = %s
+                """, (server_number, guild_id))
+                exists = await cursor.fetchone()
 
-        if success:
+                if exists:
+                    # Update the existing alert
+                    await cursor.execute("""
+                        UPDATE alert_servers
+                        SET population_change = %s, alert_channel = %s
+                        WHERE server_number = %s AND guild_id = %s
+                    """, (population_change_threshold, alert_channel_id, server_number, guild_id))
+                else:
+                    # Insert a new alert
+                    await cursor.execute("""
+                        INSERT INTO alert_servers (server_number, guild_id, population_change, alert_channel)
+                        VALUES (%s, %s, %s, %s)
+                    """, (server_number, guild_id, population_change_threshold, alert_channel_id))
+                await conn.commit()
+
+            # Update the monitor in memory
+            success = await self.monitor_manager.add_alert_to_monitor(
+                server_number=server_number,
+                guild_id=guild_id,
+                alert_channel_id=alert_channel_id,
+                population_change_threshold=population_change_threshold
+            )
+
+            if success:
+                await interaction.response.send_message(
+                    f"Alert added successfully for server `{server_number}` in this channel.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"Failed to add alert. No monitor of type 1 found for server `{server_number}` in this guild. Add a type 1 monitor before setting an alert.",
+                    ephemeral=True
+                )
+        except Exception as e:
+            logging.error(f"[monitor_commands.py] Error adding alert for server {server_number}: {e}")
             await interaction.response.send_message(
-                f"Alert added successfully for server `{server_number}` in this channel.",
+                f"An error occurred while adding the alert: {e}",
                 ephemeral=True
             )
-        else:
-            await interaction.response.send_message(
-                f"Failed to add alert. No monitor of type 1 found for server `{server_number}` in this guild. Add a type 1 monitor before setting an alert",
-                ephemeral=True
-            )
+        finally:
+            conn.close()
 
     # Remove Alert Command
     @app_commands.command(name="remove_alert", description="Remove an alert from an existing monitor.")
     @app_commands.describe(
         server_number="The ARK server number to monitor."
     )
-    async def remove_alert(self, interaction, server_number: int):
+    async def remove_alert(self, interaction, server_number: str):
         """
         Remove an alert from an existing monitor.
         """
         guild_id = interaction.guild_id  # Get the guild ID from the interaction
-        success = await self.monitor_manager.remove_alert_from_monitor(
-            server_number=server_number,
-            guild_id=guild_id
-        )
 
-        if success:
+        # Remove the alert from the alert_servers table
+        conn = await db_connector()
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # Delete the alert from the database
+                await cursor.execute("""
+                    DELETE FROM alert_servers
+                    WHERE server_number = %s AND guild_id = %s
+                """, (server_number, guild_id))
+                await conn.commit()
+
+            # Update the monitor in memory
+            success = await self.monitor_manager.remove_alert_from_monitor(
+                server_number=server_number,
+                guild_id=guild_id
+            )
+
+            if success:
+                await interaction.response.send_message(
+                    f"Alert removed successfully for server `{server_number}` in this guild.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"Failed to remove alert. No monitor of type 1 found for server `{server_number}` in this guild.",
+                    ephemeral=True
+                )
+        except Exception as e:
+            logging.error(f"[monitor_commands.py] Error removing alert for server {server_number}: {e}")
             await interaction.response.send_message(
-                f"Alert removed successfully for server `{server_number}` in this guild.",
+                f"An error occurred while removing the alert: {e}",
                 ephemeral=True
             )
-        else:
-            await interaction.response.send_message(
-                f"Failed to remove alert. No monitor of type 1 found for server `{server_number}` in this guild.",
-                ephemeral=True
-            )
+        finally:
+            conn.close()
 
 async def setup(bot):
     from tools.Monitor_Manager import monitor_manager  # Or pass as argument if needed
