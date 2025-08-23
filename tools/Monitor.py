@@ -101,6 +101,24 @@ class Monitor:
             server_info = None
             total_players = None
 
+        # If matchmaking fails, send a red embed indicating the server is offline
+        if server_info is None:
+            guild = discord.utils.get(self.bot.guilds, id=self.guild_id)
+            if guild:
+                channel = guild.get_channel(self.channel_id)
+                if channel:
+                    embed = discord.Embed(
+                        title=f"Server {self.server_number} is Offline",
+                        description="The server is currently unreachable or offline.",
+                        colour=discord.Colour.red(),
+                        timestamp=datetime.now()
+                    )
+                    try:
+                        await channel.send(embed=embed)
+                    except Exception as e:
+                        logging.error(f"[Monitor.py] Failed to send offline embed for server {self.server_number}: {e}")
+            return  # Exit the method since the server is offline
+
         # Default total_players to 0 if matchmaking fails
         if total_players is None:
             total_players = 0
