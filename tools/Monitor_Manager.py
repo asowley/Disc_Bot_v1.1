@@ -95,25 +95,43 @@ class Monitor_Manager:
         logging.info(f"Loaded {len(self.monitors)} monitors from database.")
 
     async def add_monitor(self, server_number, type_of_monitor, channel_id, guild_id):
-        key = (server_number, type_of_monitor, channel_id)
-        if key in self.monitors:
-            logging.warning(f"Monitor for server {server_number}, type {type_of_monitor}, channel {channel_id} already exists.")
-            return
+        """
+        Add a new monitor to the list.
+        """
+        # Check if a monitor with the same server_number, type_of_monitor, and channel_id already exists
+        for monitor in self.monitors:
+            if (
+                monitor.server_number == server_number and
+                monitor.type_of_monitor == type_of_monitor and
+                monitor.channel_id == channel_id
+            ):
+                logging.warning(f"Monitor for server {server_number}, type {type_of_monitor}, channel {channel_id} already exists.")
+                return
 
+        # Create and start the new monitor
         monitor = Monitor(server_number, type_of_monitor, channel_id, guild_id, self.bot)
-        self.monitors[key] = monitor
+        self.monitors.append(monitor)
         await monitor.start()
         logging.info(f"Added monitor for server {server_number}, type {type_of_monitor}, channel {channel_id}, guild {guild_id}.")
 
     async def remove_monitor(self, server_number, type_of_monitor, channel_id, guild_id):
-        key = (server_number, type_of_monitor, channel_id)
-        if key not in self.monitors:
-            logging.warning(f"Monitor for server {server_number}, type {type_of_monitor}, channel {channel_id} does not exist.")
-            return
+        """
+        Remove an existing monitor from the list.
+        """
+        # Find the monitor to remove
+        for monitor in self.monitors:
+            if (
+                monitor.server_number == server_number and
+                monitor.type_of_monitor == type_of_monitor and
+                monitor.channel_id == channel_id
+            ):
+                # Stop and remove the monitor
+                self.monitors.remove(monitor)
+                await monitor.stop()
+                logging.info(f"Removed monitor for server {server_number}, type {type_of_monitor}, channel {channel_id}, guild {guild_id}.")
+                return
 
-        monitor = self.monitors.pop(key)
-        await monitor.stop()
-        logging.info(f"Removed monitor for server {server_number}, type {type_of_monitor}, channel {channel_id}, guild {guild_id}.")
+        logging.warning(f"Monitor for server {server_number}, type {type_of_monitor}, channel {channel_id} does not exist.")
 
     async def add_alert_to_monitor(self, server_number, guild_id, alert_channel_id, population_change_threshold):
         """
