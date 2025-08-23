@@ -5,3 +5,4 @@ config.ini
 *.json
 graphs/
 *.png
+main_run.py
