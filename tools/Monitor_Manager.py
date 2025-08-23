@@ -111,7 +111,7 @@ class Monitor_Manager:
         # Create and start the new monitor
         monitor = Monitor(server_number, type_of_monitor, channel_id, guild_id, self.bot)
         self.monitors.append(monitor)
-        await monitor.start()
+        monitor.start()
         logging.info(f"Added monitor for server {server_number}, type {type_of_monitor}, channel {channel_id}, guild {guild_id}.")
 
     async def remove_monitor(self, server_number, type_of_monitor, channel_id, guild_id):
