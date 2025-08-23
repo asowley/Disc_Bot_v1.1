@@ -163,7 +163,7 @@ class Monitor_Manager:
         """
         for monitor in self.monitors:  # Iterate directly over the list
             if (
-                monitor.server_number == server_number and
+                str(monitor.server_number) == str(server_number) and
                 monitor.guild_id == guild_id and
                 monitor.type_of_monitor == 1
             ):
