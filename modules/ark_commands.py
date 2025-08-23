@@ -54,58 +54,73 @@ class ArkCommands(commands.Cog):
         eos = EOS()
         max_retries = 3
 
-        for attempt in range(max_retries):
-            try:
-                # Prepare the graph before sending the first embed
-                graph_path = await create_history_graph(server_number, 2)  # Last 2 hours
+        graph_path = None
+        try:
+            # Generate the graph with retries
+            for attempt in range(max_retries):
+                try:
+                    logging.info(f"Generating graph for server {server_number} (attempt {attempt + 1})...")
+                    graph_path = await asyncio.wait_for(create_history_graph(server_number, 2), timeout=10)
+                    break
+                except asyncio.TimeoutError:
+                    logging.warning(f"Graph generation timed out for server {server_number} (attempt {attempt + 1}).")
+                except Exception as e:
+                    logging.error(f"Error generating graph for server {server_number} (attempt {attempt + 1}): {e}")
+            else:
+                logging.error(f"Failed to generate graph for server {server_number} after {max_retries} attempts.")
 
-                # Fetch server info
-                result = await eos.matchmaking(server_number)
-                if result is None:
-                    raise Exception(f"Failed to fetch server info for {server_number} (attempt {attempt + 1})")
-
-                server_info, total_players, max_players, ip_and_port = result
-
-                # Prepare the embed
-                custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', 'Unknown')
-                in_game_day = server_info['attributes'].get('DAYTIME_s', 'Unknown')
-                player_count = server_info.get('totalPlayers', 'Unknown')
-                ping = server_info['attributes'].get('EOSSERVERPING_l', 'Unknown')
-                now = discord.utils.utcnow()
-
-                embed = discord.Embed(
-                    title=f"Server Info",
-                    colour=discord.Colour.blue(),
-                    timestamp=now
-                )
-                embed.add_field(name="Server Name", value=f"```ansi\n{custom_server_name}```", inline=False)
-                embed.add_field(name="In-game Day", value=f"```ansi\n{in_game_day}```", inline=False)
-                embed.add_field(name="Player Count", value=f"```ansi\n{player_count}```", inline=True)
-                embed.add_field(name="Ping", value=f"```ansi\n{ping}```", inline=True)
-                embed.add_field(name="IP/Port", value=f"```ansi\n{ip_and_port}```", inline=False)
-
-                # Attach the graph to the embed if it exists
-                if graph_path:
-                    with open(graph_path, "rb") as f:
-                        file_disc = discord.File(f, filename="image.png")
-                        embed.set_image(url="attachment://image.png")  # Attach the graph to the embed
-                        await interaction.followup.send(embed=embed, file=file_disc)
-                else:
-                    # Send only the embed if the graph couldn't be generated
-                    await interaction.followup.send(embed=embed)
-
-                # Cleanup the graph file if it was created
-                if graph_path:
-                    os.remove(graph_path)
-
-                # Exit the loop if successful
+            # Fetch server info with retries
+            result = None
+            for attempt in range(max_retries):
+                try:
+                    logging.info(f"Fetching server info for {server_number} (attempt {attempt + 1})...")
+                    result = await asyncio.wait_for(eos.matchmaking(server_number), timeout=10)
+                    if result:
+                        break
+                except asyncio.TimeoutError:
+                    logging.warning(f"Fetching server info timed out for {server_number} (attempt {attempt + 1}).")
+                except Exception as e:
+                    logging.error(f"Error fetching server info for {server_number} (attempt {attempt + 1}): {e}")
+            else:
+                await interaction.followup.send(f"Failed to fetch server info for `{server_number}` after {max_retries} attempts.", ephemeral=True)
                 return
 
-            except Exception as e:
-                logging.error(f"[ark_commands.py] Error in /server command for {server_number} (attempt {attempt + 1}): {e}")
+            server_info, total_players, max_players, ip_and_port = result
 
-        # If all retries fail, send an error message
-        await interaction.followup.send(f"Failed to retrieve info for server `{server_number}` after {max_retries} attempts.", ephemeral=True)
+            # Prepare the embed
+            custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', 'Unknown')
+            in_game_day = server_info['attributes'].get('DAYTIME_s', 'Unknown')
+            player_count = server_info.get('totalPlayers', 'Unknown')
+            ping = server_info['attributes'].get('EOSSERVERPING_l', 'Unknown')
+            now = discord.utils.utcnow()
+
+            embed = discord.Embed(
+                title=f"Server Info",
+                colour=discord.Colour.blue(),
+                timestamp=now
+            )
+            embed.add_field(name="Server Name", value=f"```ansi\n{custom_server_name}```", inline=False)
+            embed.add_field(name="In-game Day", value=f"```ansi\n{in_game_day}```", inline=False)
+            embed.add_field(name="Player Count", value=f"```ansi\n{player_count}```", inline=True)
+            embed.add_field(name="Ping", value=f"```ansi\n{ping}```", inline=True)
+            embed.add_field(name="IP/Port", value=f"```ansi\n{ip_and_port}```", inline=False)
+
+            # Attach the graph to the embed if it exists
+            if graph_path:
+                with open(graph_path, "rb") as f:
+                    file_disc = discord.File(f, filename="image.png")
+                    embed.set_image(url="attachment://image.png")
+                    await interaction.followup.send(embed=embed, file=file_disc)
+            else:
+                await interaction.followup.send(embed=embed)
+
+        except Exception as e:
+            logging.error(f"Unexpected error in /server command: {e}")
+            await interaction.followup.send(f"An unexpected error occurred while processing the server `{server_number}`.", ephemeral=True)
+        finally:
+            # Cleanup the graph file if it was created
+            if graph_path:
+                os.remove(graph_path)
 
     @app_commands.command(name="list", description="List ARK servers by population (e.g. /list 60 + for >=60 players)")
     @app_commands.describe(population="Population number", operator="Operator: + for >=, - for <=, = for exact")
