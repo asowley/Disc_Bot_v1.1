@@ -133,10 +133,26 @@ async def create_history_graph(server_number: str, amount: int):
         ax.set_xlabel("Time (UTC)", fontsize=12)
         ax.set_ylabel("Players", fontsize=12)
 
-        # Format the x-axis for time
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, amount // 6)))
-        ax.xaxis.set_minor_locator(mdates.MinuteLocator(interval=15))
+        # Dynamically adjust the x-axis tick intervals based on the time range
+        if amount <= 1:  # 1 hour or less
+            major_locator = mdates.MinuteLocator(interval=10)  # Major ticks every 10 minutes
+            minor_locator = mdates.MinuteLocator(interval=2)   # Minor ticks every 2 minutes
+        elif amount <= 6:  # Up to 6 hours
+            major_locator = mdates.MinuteLocator(interval=30)  # Major ticks every 30 minutes
+            minor_locator = mdates.MinuteLocator(interval=5)   # Minor ticks every 5 minutes
+        elif amount <= 24:  # Up to 24 hours
+            major_locator = mdates.HourLocator(interval=1)     # Major ticks every 1 hour
+            minor_locator = mdates.MinuteLocator(interval=15)  # Minor ticks every 15 minutes
+        else:  # More than 24 hours
+            major_locator = mdates.HourLocator(interval=6)     # Major ticks every 6 hours
+            minor_locator = mdates.HourLocator(interval=1)     # Minor ticks every 1 hour
+
+        # Apply the locators to the x-axis
+        ax.xaxis.set_major_locator(major_locator)
+        ax.xaxis.set_minor_locator(minor_locator)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))  # Format time as HH:MM
+
+        # Add grid lines
         ax.grid(True, which='major', linestyle='--', linewidth=0.5, alpha=0.7)
         ax.grid(True, which='minor', linestyle=':', linewidth=0.3, alpha=0.5)
 
