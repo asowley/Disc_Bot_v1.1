@@ -195,6 +195,136 @@ class EOSCommands(commands.Cog):
                 else:
                     await asyncio.sleep(2)
 
+    @app_commands.command(name="set_tribe", description="Set a tribe for a specific ARK server by server number.")
+    @app_commands.describe(server_number="The ARK server number (e.g., 2159)", tribe="The name of the tribe to associate with the server.")
+    async def set_tribe(self, interaction: discord.Interaction, server_number: str, tribe: str):
+        await interaction.response.defer(thinking=True)  # Extend interaction timeout
+        conn = await db_connector()
+
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # Check if the server number exists in the database
+                await cursor.execute(
+                    "SELECT 1 FROM ark_servers_new WHERE ark_server = %s",
+                    (server_number,)
+                )
+                server_exists = await cursor.fetchone()
+
+                if not server_exists:
+                    # Server does not exist, inform the user
+                    embed = discord.Embed(
+                        title="Server Not Found",
+                        description=(
+                            f"The server number `{server_number}` does not exist in the database.\n"
+                            "Please contact a bot admin to add the server."
+                        ),
+                        colour=discord.Colour.red()
+                    )
+                    await interaction.followup.send(embed=embed)
+                    return
+
+                # Update the tribe for the server
+                await cursor.execute(
+                    "UPDATE ark_servers_new SET tribe = %s WHERE ark_server = %s",
+                    (tribe, server_number)
+                )
+                await conn.commit()
+
+                # Inform the user of the successful update
+                embed = discord.Embed(
+                    title="Tribe Updated",
+                    description=(
+                        f"The tribe for server `{server_number}` has been successfully updated to `{tribe}`."
+                    ),
+                    colour=discord.Colour.green()
+                )
+                await interaction.followup.send(embed=embed)
+
+        except Exception as e:
+            logging.error(f"[eos_commands.py] Error in /set_tribe command: {e}")
+            await interaction.followup.send(
+                f"An error occurred while processing your request: {e}",
+                ephemeral=True
+            )
+        finally:
+            conn.close()
+
+    @app_commands.command(name="update_eos", description="Update the players table with missing EOS player info.")
+    async def update_eos(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)  # Extend interaction timeout
+        eos = EOS()
+        conn = await db_connector()
+
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # Select all distinct PUIDs from user_servers that are not in the players table
+                await cursor.execute("""
+                    SELECT DISTINCT us.puid
+                    FROM user_servers us
+                    LEFT JOIN players p ON us.puid = p.puid
+                    WHERE p.puid IS NULL
+                """)
+                missing_puids = await cursor.fetchall()
+
+                if not missing_puids:
+                    # No missing PUIDs found
+                    embed = discord.Embed(
+                        title="No Missing Players",
+                        description="All players in `user_servers` already exist in the `players` table.",
+                        colour=discord.Colour.green()
+                    )
+                    await interaction.followup.send(embed=embed)
+                    return
+
+                # Extract PUIDs into a list
+                puid_list = [row['puid'] for row in missing_puids]
+
+                # Process PUIDs in batches of 20
+                batch_size = 20
+                total_updated = 0
+                for i in range(0, len(puid_list), batch_size):
+                    batch = puid_list[i:i + batch_size]
+
+                    # Fetch player info from EOS for the current batch
+                    try:
+                        player_info_list = await eos.info(batch)
+                    except Exception as e:
+                        logging.error(f"[eos_commands.py] Error fetching player info from EOS for batch {i // batch_size + 1}: {e}")
+                        continue
+
+                    # Insert player info into the players table
+                    for player_info in player_info_list:
+                        puid = player_info.get("puid")
+                        account_id = player_info.get("account")
+                        provider = player_info.get("platform")
+                        display_name = player_info.get("display_name")
+
+                        # Insert into the players table
+                        await cursor.execute("""
+                            INSERT INTO players (puid, account_id, provider, display_name)
+                            VALUES (%s, %s, %s, %s)
+                        """, (puid, account_id, provider, display_name))
+                        total_updated += 1
+
+                await conn.commit()
+
+                # Inform the user of the successful update
+                embed = discord.Embed(
+                    title="Players Updated",
+                    description=f"Successfully updated {total_updated} players in the `players` table.",
+                    colour=discord.Colour.green()
+                )
+                await interaction.followup.send(embed=embed)
+
+        except Exception as e:
+            logging.error(f"[eos_commands.py] Error in /update_eos command: {e}")
+            await interaction.followup.send(
+                f"An error occurred while processing your request: {e}",
+                ephemeral=True
+            )
+        finally:
+            conn.close()
+
 async def setup(bot):
     await bot.add_cog(EOSCommands(bot))
 
