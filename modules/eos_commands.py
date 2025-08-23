@@ -1,3 +1,4 @@
+# EOS commands: /players and /player_info
 import aiomysql
 import discord
 from discord import app_commands

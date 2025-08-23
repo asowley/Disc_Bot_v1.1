@@ -1,3 +1,4 @@
+# Monitor commands: /monitor, /remove_monitor, /add_alert, /remove_alert
 import logging
 import aiomysql
 from discord import app_commands

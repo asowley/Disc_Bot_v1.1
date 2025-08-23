@@ -1,3 +1,4 @@
+# Manages multiple monitors and handles their lifecycle
 import logging
 from tools.Monitor import Monitor
 from tools.connector import db_connector

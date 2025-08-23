@@ -1,3 +1,4 @@
+# Main bot file to initialize and run the Discord bot
 import discord
 from discord.ext import commands
 import logging

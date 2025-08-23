@@ -1,3 +1,4 @@
+# Build Discord embeds to display player information with ANSI color codes
 import discord
 from datetime import datetime, timezone
 from tools.database_tools import get_user_alias, get_user_tribe_and_most_joined_server

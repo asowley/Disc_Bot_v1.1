@@ -1,3 +1,4 @@
+# Monitor all servers and store new players in the database
 import asyncio
 import logging
 from tools.EOS import EOS

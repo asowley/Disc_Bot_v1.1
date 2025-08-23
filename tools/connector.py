@@ -1,3 +1,4 @@
+# Connect to the database and add ARK servers asynchronously
 import configparser
 import logging
 import aiomysql

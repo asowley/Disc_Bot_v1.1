@@ -1,3 +1,4 @@
+# Database tools for storing and retrieving ARK server and player information
 import datetime
 import logging
 from datetime import datetime, timedelta, timezone

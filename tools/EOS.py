@@ -1,3 +1,4 @@
+# Tools for interacting with Epic Online Services (EOS) API
 import asyncio
 import json
 import aiohttp
