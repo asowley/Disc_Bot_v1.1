@@ -138,13 +138,8 @@ class Monitor_Manager:
         Add an alert to an existing monitor of type 1.
         """
         for monitor in self.monitors: 
-            logging.info(f"""
-type_of_monitor: {monitor.type_of_monitor} type: {type(monitor.type_of_monitor)} actual: 1 type: {type(1)}
-guild_id: {monitor.guild_id} type: {type(monitor.guild_id)} / actual: {guild_id} type: {type(guild_id)}
-server_number: {monitor.server_number} type: {type(monitor.server_number)} / actual: {server_number} type: {type(server_number)}
-                      """) # Iterate directly over the list
             if (
-                monitor.server_number == server_number and
+                str(monitor.server_number) == str(server_number) and  # Convert both to strings for comparison
                 monitor.guild_id == guild_id and
                 monitor.type_of_monitor == 1
             ):
