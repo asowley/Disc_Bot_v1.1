@@ -140,12 +140,21 @@ async def create_history_graph(server_number: str, amount: int):
         elif amount <= 6:  # Up to 6 hours
             major_locator = mdates.MinuteLocator(interval=30)  # Major ticks every 30 minutes
             minor_locator = mdates.MinuteLocator(interval=5)   # Minor ticks every 5 minutes
-        elif amount <= 24:  # Up to 24 hours
+        elif amount <= 12:  # Up to 24 hours
             major_locator = mdates.HourLocator(interval=1)     # Major ticks every 1 hour
             minor_locator = mdates.MinuteLocator(interval=15)  # Minor ticks every 15 minutes
-        else:  # More than 24 hours
-            major_locator = mdates.HourLocator(interval=6)     # Major ticks every 6 hours
+        elif amount <= 24:  # Up to 24 hours
+            major_locator = mdates.HourLocator(interval=2)     # Major ticks every 2 hour
+            minor_locator = mdates.MinuteLocator(interval=30)  # Minor ticks every 30 minutes
+        elif amount <= 48: # Up to 2 days
+            major_locator = mdates.HourLocator(interval=4)     # Major ticks every 4 hours
             minor_locator = mdates.HourLocator(interval=1)     # Minor ticks every 1 hour
+        elif amount <= 96: # Up to 4 days
+            major_locator = mdates.HourLocator(interval=12)    # Major ticks every 12 hours
+            minor_locator = mdates.HourLocator(interval=3)     # Minor ticks every 3 hours
+        else:  # More than 4 days
+            major_locator = mdates.DayLocator(interval=1)     # Major ticks every 1 day
+            minor_locator = mdates.HourLocator(interval=4)     # Minor ticks every 4 hours
 
         # Apply the locators to the x-axis
         ax.xaxis.set_major_locator(major_locator)
