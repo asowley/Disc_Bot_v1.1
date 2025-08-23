@@ -105,9 +105,9 @@ class Monitor_Manager:
         # Check if a monitor with the same server_number, type_of_monitor, and channel_id already exists
         for monitor in self.monitors:
             if (
-                monitor.server_number == server_number and
-                monitor.type_of_monitor == type_of_monitor and
-                monitor.channel_id == channel_id
+                str(monitor.server_number) == str(server_number) and
+                str(monitor.type_of_monitor) == str(type_of_monitor) and
+                str(monitor.channel_id) == str(channel_id)
             ):
                 logging.warning(f"Monitor for server {server_number}, type {type_of_monitor}, channel {channel_id} already exists.")
                 return
@@ -125,9 +125,9 @@ class Monitor_Manager:
         # Find the monitor to remove
         for monitor in self.monitors:
             if (
-                monitor.server_number == server_number and
-                monitor.type_of_monitor == type_of_monitor and
-                monitor.channel_id == channel_id
+                str(monitor.server_number) == str(server_number) and
+                str(monitor.type_of_monitor) == str(type_of_monitor) and
+                str(monitor.channel_id) == str(channel_id)
             ):
                 # Stop and remove the monitor
                 self.monitors.remove(monitor)
