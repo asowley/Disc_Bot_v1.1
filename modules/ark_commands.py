@@ -211,5 +211,59 @@ class ArkCommands(commands.Cog):
         view = ServerListView(embeds)
         await interaction.followup.send(embed=embeds[0], view=view)
 
+    @app_commands.command(name="history", description="Show player history for an ARK server over a specified number of hours.")
+    @app_commands.describe(server_number="The ARK server number (e.g., 2000)", hours="The number of hours to show history for (e.g., 6).")
+    async def history(self, interaction: discord.Interaction, server_number: str, hours: int):
+        await interaction.response.defer(thinking=True)  # Extend interaction timeout
+        max_retries = 3
+        graph_path = None
+
+        try:
+            # Validate the hours argument
+            if hours <= 0:
+                await interaction.followup.send("The number of hours must be greater than 0.", ephemeral=True)
+                return
+
+            # Retry logic for generating the graph
+            for attempt in range(max_retries):
+                try:
+                    logging.info(f"Generating history graph for server {server_number} over {hours} hours (attempt {attempt + 1})...")
+                    graph_path = await asyncio.wait_for(create_history_graph(server_number, hours), timeout=15)
+                    if graph_path:
+                        break
+                except asyncio.TimeoutError:
+                    logging.warning(f"Graph generation timed out for server {server_number} (attempt {attempt + 1}).")
+                except Exception as e:
+                    logging.error(f"Error generating graph for server {server_number} (attempt {attempt + 1}): {e}")
+            else:
+                # If all retries fail
+                await interaction.followup.send(
+                    f"Failed to generate history graph for server `{server_number}` after {max_retries} attempts.",
+                    ephemeral=True
+                )
+                return
+
+            # Send the graph as a response
+            with open(graph_path, "rb") as f:
+                file_disc = discord.File(f, filename="history.png")
+                embed = discord.Embed(
+                    title=f"Player History for Server {server_number}",
+                    description=f"History over the last {hours} hours.",
+                    colour=discord.Colour.blue()
+                )
+                embed.set_image(url="attachment://history.png")
+                await interaction.followup.send(embed=embed, file=file_disc)
+
+        except Exception as e:
+            logging.error(f"Unexpected error in /history command: {e}")
+            await interaction.followup.send(
+                f"An unexpected error occurred while processing the history for server `{server_number}`.",
+                ephemeral=True
+            )
+        finally:
+            # Cleanup the graph file if it was created
+            if graph_path:
+                os.remove(graph_path)
+
 async def setup(bot):
     await bot.add_cog(ArkCommands(bot))
