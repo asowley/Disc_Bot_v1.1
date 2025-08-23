@@ -77,15 +77,17 @@ class Monitor:
                 await asyncio.sleep(10)
 
     async def _run_monitor(self):
-        logging.info(f"Starting monitor (type {self.type_of_monitor}) for server {self.server_number} in channel {self.channel_id} of guild {self.guild_id}")
-        if self.type_of_monitor == 1:
-            await self.run_monitor_type_1()
-        elif self.type_of_monitor == 2:
-            await self.run_monitor_type_2()
-        elif self.type_of_monitor == 3:
-            await self.run_monitor_type_3()
-        else:
-            logging.error(f"Unknown monitor type: {self.type_of_monitor}")
+        try:
+            if self.type_of_monitor == 1:
+                await self.run_monitor_type_1()
+            elif self.type_of_monitor == 2:
+                await self.run_monitor_type_2()
+            elif self.type_of_monitor == 3:
+                await self.run_monitor_type_3()
+            else:
+                logging.error(f"Unknown monitor type: {self.type_of_monitor}")
+        except Exception as e:
+            logging.error(f"Exception in _run_monitor for server {self.server_number}: {e}")
 
     async def run_monitor_type_1(self):
         '''A single monitor loop for monitors of type 1.'''
