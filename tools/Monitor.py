@@ -92,6 +92,8 @@ class Monitor:
     async def run_monitor_type_1(self):
         '''A single monitor loop for monitors of type 1.'''
         eos = EOS()
+        graph_path = None
+        offline = False
 
         # Attempt to fetch server info
         try:
@@ -103,6 +105,8 @@ class Monitor:
 
         # If matchmaking fails, send a red embed indicating the server is offline
         if server_info is None:
+            offline = True
+            total_players = 0  # treat as 0 players for this minute
             guild = discord.utils.get(self.bot.guilds, id=self.guild_id)
             if guild:
                 channel = guild.get_channel(self.channel_id)
@@ -117,13 +121,12 @@ class Monitor:
                         await channel.send(embed=embed)
                     except Exception as e:
                         logging.error(f"[Monitor.py] Failed to send offline embed for server {self.server_number}: {e}")
-            return  # Exit the method since the server is offline
 
-        # Default total_players to 0 if matchmaking fails
+        # Default total_players to 0 if matchmaking failed or returned None
         if total_players is None:
             total_players = 0
 
-        # --- Store player count in DB ---
+        # --- Store player count in DB (store 0 when offline) ---
         try:
             await store_info_to_db(self.server_number, total_players)
         except Exception as e:
@@ -150,10 +153,15 @@ class Monitor:
         if population_counts:
             balance = total_players - population_counts[-1]
 
-        # --- Generate the history graph at the start ---
-        graph_path = await create_history_graph(self.server_number, 1)  # Last hour
+        # --- Generate the history graph (skip when offline) ---
+        if not offline:
+            try:
+                graph_path = await create_history_graph(self.server_number, 1)  # Last hour
+            except Exception as e:
+                logging.error(f"[Monitor.py] Failed to create history graph for server {self.server_number}: {e}")
+                graph_path = None
 
-        # --- Check for alerts ---
+        # --- Check for alerts (suppressed when total_players == 0 or offline by condition) ---
         if self.alert_channel_id and self.population_change_threshold is not None and total_players > 0:
             guild = discord.utils.get(self.bot.guilds, id=self.guild_id)
             if guild:
@@ -167,7 +175,7 @@ class Monitor:
                         # Skip alerts if any of the last 5 minutes had 0 population (likely recent crash)
                         last5 = population_counts[-5:]
                         if any(p == 0 for p in last5):
-                            logging.info(f"[Monitor.py] Skipping alert: zero population detected within last 5 minutes "
+                            logging.info(f"[Monitor.py] Skipping alert: zero population within last 5 minutes "
                                          f"(last5={last5}) for server {self.server_number}")
                         else:
                             # Signed threshold logic
@@ -177,7 +185,6 @@ class Monitor:
                                 logging.error(f"[Monitor.py] Invalid alert threshold: {self.population_change_threshold}")
                                 threshold = 0
 
-                            # Only alert when the sign matches the intent:
                             # +threshold => joins (increase), -threshold => leaves (decrease)
                             should_alert = (
                                 (threshold > 0 and population_change >= threshold) or
@@ -218,8 +225,8 @@ class Monitor:
                                 except Exception as e:
                                     logging.error(f"[Monitor.py] Failed to build/send alert embed: {e}")
 
-        # --- Discord embed logic ---
-        if abs(balance) > 0:
+        # --- Discord embed logic (skip for offline minutes to avoid duplicate messages) ---
+        if not offline and abs(balance) > 0:
             embed = discord.Embed(title=f"Monitor {self.server_number}", timestamp=datetime.now())
 
             if balance > 0:
@@ -269,7 +276,7 @@ class Monitor:
                     except Exception as e:
                         logging.error(f"[Monitor.py] Failed to send monitor message or graph: {e}")
 
-        # --- Channel rename logic ---
+        # --- Channel rename logic (still runs; will show -0 when offline) ---
         now_ts = int(datetime.now().timestamp())
         channel_rename_interval = 5 * 60  # 5 minutes in seconds
 
@@ -279,14 +286,13 @@ class Monitor:
                 if guild:
                     channel = guild.get_channel(self.channel_id)
                     if channel:
-                        # Rename to server_number-population as requested
                         new_name = f"{self.server_number}-{total_players}"
                         await channel.edit(name=new_name)
                         last_channel_rename = now_ts
             except Exception as e:
                 logging.error(f"[Monitor.py] Failed to rename channel {self.channel_id}: {e}")
 
-        # --- Update JSON persistence after sending monitor ---
+        # --- Update JSON persistence after sending / offline handling ---
         population_counts.append(total_players)
         if len(population_counts) > 60:
             population_counts = population_counts[-60:]
@@ -301,15 +307,16 @@ class Monitor:
                 "last_channel_rename": last_channel_rename
             }, f)
 
+        # --- Cleanup the graph file ---
+        if graph_path:
+            os.remove(graph_path)
+            
         # --- Wait for the next update ---
         current_timestamp = int(datetime.now().timestamp())
         wait_time = (last_monitor_timestamp + 60) - current_timestamp
         if wait_time > 0:
             await asyncio.sleep(round(wait_time))
 
-        # --- Cleanup the graph file ---
-        if graph_path:
-            os.remove(graph_path)
 
     async def run_monitor_type_2(self):
         '''\nA single monitor loop for monitors of type 2.\n'''
