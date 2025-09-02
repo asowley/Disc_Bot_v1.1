@@ -39,65 +39,82 @@ class Monitor_Manager:
         Load all monitors from the database and initialize them.
         """
         conn = await db_connector()
-        async with conn.cursor(aiomysql.DictCursor) as cursor:
-            # Fetch all monitors from the monitors_new_upd table
-            await cursor.execute("""
-                SELECT ark_server, type, channel_id, guild_id
-                FROM monitors_new_upd
-            """)
-            monitors = await cursor.fetchall()
-            logging.info(f"Fetched {len(monitors)} monitors from database.")
-            # Initialize monitors
-            for monitor_data in monitors:
-                server_number = monitor_data['ark_server']
-                type_of_monitor = monitor_data['type']
-                channel_id = monitor_data['channel_id']
-                guild_id = monitor_data['guild_id']
+        try:
+            # Fetch monitors
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                try:
+                    await cursor.execute("""
+                        SELECT ark_server, type, channel_id, guild_id
+                        FROM monitors_new_upd
+                    """)
+                    monitors = await cursor.fetchall()
+                    logging.info(f"Fetched {len(monitors)} monitors from database.")
+                except Exception as e:
+                    logging.error(f"Failed to fetch monitors: {e}")
+                    return
 
-                # Create a new Monitor instance
-                monitor = Monitor(
-                    server_number,
-                    type_of_monitor,
-                    channel_id,
-                    guild_id,
-                    self.bot
-                )
+                # Initialize monitors
+                for monitor_data in monitors:
+                    try:
+                        server_number = str(monitor_data['ark_server'])
+                        type_of_monitor = int(monitor_data['type'])
+                        channel_id = int(monitor_data['channel_id'])
+                        guild_id = int(monitor_data['guild_id'])
 
-                # Start the monitor
-                monitor.start()
+                        monitor = Monitor(server_number, type_of_monitor, channel_id, guild_id, self.bot)
+                        monitor.start()
+                        self.monitors.append(monitor)
+                    except Exception as e:
+                        logging.error(f"Failed to init/start monitor {monitor_data}: {e}")
 
-                # Add the monitor to the list
-                self.monitors.append(monitor)
-            logging.info(f"Initialized {len(self.monitors)} monitors.")
+                logging.info(f"Initialized {len(self.monitors)} monitors.")
+
             logging.info("Loading alerts for monitors from database.")
-            # Fetch all alerts from the alert_servers table
-            await cursor.execute("""
-                SELECT server_number, guild_id, population_change, alert_channel
-                FROM alert_servers
-            """)
-            alerts = await cursor.fetchall()
 
-            # Add alerts to the corresponding monitors
-            for alert_data in alerts:
-                server_number = alert_data['server_number']
-                guild_id = alert_data['guild_id']
-                population_change_threshold = alert_data['population_change']
-                alert_channel_id = alert_data['alert_channel']
+            # Use a fresh cursor for alerts to avoid cursor state issues
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                try:
+                    await cursor.execute("""
+                        SELECT server_number, guild_id, population_change, alert_channel
+                        FROM alert_servers
+                    """)
+                    alerts = await cursor.fetchall()
+                    logging.info(f"Fetched {len(alerts)} alerts from alert_servers.")
+                except Exception as e:
+                    logging.error(f"Failed to fetch alerts from alert_servers: {e}")
+                    return
 
-                success = await self.add_alert_to_monitor(
-                    server_number=server_number,
-                    guild_id=guild_id,
-                    alert_channel_id=alert_channel_id,
-                    population_change_threshold=population_change_threshold
-                )
+                # Map alerts to monitors
+                for alert_data in alerts:
+                    try:
+                        server_number = str(alert_data['server_number'])
+                        guild_id = int(alert_data['guild_id'])
+                        population_change_threshold = int(alert_data['population_change'])
+                        alert_channel_id = int(alert_data['alert_channel'])
 
-                if success:
-                    logging.info(f"Loaded alert for monitor: server_number={server_number}, guild_id={guild_id}, "
-                                 f"alert_channel_id={alert_channel_id}, population_change_threshold={population_change_threshold}")
-                else:
-                    logging.warning(f"Failed to load alert for monitor: server_number={server_number}, guild_id={guild_id}")
+                        success = await self.add_alert_to_monitor(
+                            server_number=server_number,
+                            guild_id=guild_id,
+                            alert_channel_id=alert_channel_id,
+                            population_change_threshold=population_change_threshold
+                        )
 
-        logging.info(f"Loaded {len(self.monitors)} monitors from database.")
+                        if success:
+                            logging.info(
+                                f"Loaded alert for monitor: server_number={server_number}, guild_id={guild_id}, "
+                                f"alert_channel_id={alert_channel_id}, population_change_threshold={population_change_threshold}"
+                            )
+                        else:
+                            logging.warning(f"No matching type 1 monitor for alert: server={server_number}, guild={guild_id}")
+                    except Exception as e:
+                        logging.error(f"Failed to apply alert {alert_data}: {e}")
+
+            logging.info(f"Loaded {len(self.monitors)} monitors from database.")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     async def add_monitor(self, server_number, type_of_monitor, channel_id, guild_id):
         """
