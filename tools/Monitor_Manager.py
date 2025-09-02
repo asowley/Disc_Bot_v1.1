@@ -46,7 +46,7 @@ class Monitor_Manager:
                 FROM monitors_new_upd
             """)
             monitors = await cursor.fetchall()
-
+            logging.info(f"Fetched {len(monitors)} monitors from database.")
             # Initialize monitors
             for monitor_data in monitors:
                 server_number = monitor_data['ark_server']
@@ -68,7 +68,8 @@ class Monitor_Manager:
 
                 # Add the monitor to the list
                 self.monitors.append(monitor)
-
+            logging.info(f"Initialized {len(self.monitors)} monitors.")
+            logging.info("Loading alerts for monitors from database.")
             # Fetch all alerts from the alert_servers table
             await cursor.execute("""
                 SELECT server_number, guild_id, population_change, alert_channel

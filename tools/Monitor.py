@@ -276,7 +276,6 @@ class Monitor:
                         # Rename to server_number-population as requested
                         new_name = f"{self.server_number}-{total_players}"
                         await channel.edit(name=new_name)
-                        logging.info(f"[Monitor.py] Renamed channel {self.channel_id} to {new_name}")
                         last_channel_rename = now_ts
             except Exception as e:
                 logging.error(f"[Monitor.py] Failed to rename channel {self.channel_id}: {e}")
