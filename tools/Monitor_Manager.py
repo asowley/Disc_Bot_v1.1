@@ -5,6 +5,7 @@ from tools.connector import db_connector
 import aiomysql
 import asyncio
 from tools.all_servers_monitor import monitor_all_servers
+import time
 
 class Monitor_Manager:
     def __init__(self, bot):
@@ -38,59 +39,84 @@ class Monitor_Manager:
         """
         Load all monitors from the database and initialize them.
         """
+        t0 = time.monotonic()
+        logging.info("[Monitor_Manager] load_monitors_from_db: start")
         conn = await db_connector()
         try:
-            # Fetch monitors
+            # ---------------- Monitors ----------------
+            t_m0 = time.monotonic()
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 try:
-                    await cursor.execute("""
+                    logging.info("[Monitor_Manager] Fetching monitors from monitors_new_upd...")
+                    # Timeout wrappers to detect stalls
+                    await asyncio.wait_for(cursor.execute("""
                         SELECT ark_server, type, channel_id, guild_id
                         FROM monitors_new_upd
-                    """)
-                    monitors = await cursor.fetchall()
-                    logging.info(f"Fetched {len(monitors)} monitors from database.")
+                    """), timeout=10)
+                    monitors = await asyncio.wait_for(cursor.fetchall(), timeout=10)
+                    logging.info(f"[Monitor_Manager] Monitors fetched: count={len(monitors)} (took {(time.monotonic()-t_m0):.3f}s)")
+                except asyncio.TimeoutError:
+                    logging.error("[Monitor_Manager] Timeout while fetching monitors from DB.")
+                    return
                 except Exception as e:
-                    logging.error(f"Failed to fetch monitors: {e}")
+                    logging.error(f"[Monitor_Manager] Failed to fetch monitors: {e}")
                     return
 
                 # Initialize monitors
-                for monitor_data in monitors:
+                init_ok = 0
+                for idx, monitor_data in enumerate(monitors):
                     try:
                         server_number = str(monitor_data['ark_server'])
                         type_of_monitor = int(monitor_data['type'])
                         channel_id = int(monitor_data['channel_id'])
                         guild_id = int(monitor_data['guild_id'])
 
+                        logging.debug(f"[Monitor_Manager] Init monitor[{idx}] "
+                                      f"server={server_number}, type={type_of_monitor}, "
+                                      f"channel={channel_id}, guild={guild_id}")
                         monitor = Monitor(server_number, type_of_monitor, channel_id, guild_id, self.bot)
                         monitor.start()
                         self.monitors.append(monitor)
+                        init_ok += 1
                     except Exception as e:
-                        logging.error(f"Failed to init/start monitor {monitor_data}: {e}")
+                        logging.error(f"[Monitor_Manager] Failed to init/start monitor {monitor_data}: {e}")
 
-                logging.info(f"Initialized {len(self.monitors)} monitors.")
+                logging.info(f"[Monitor_Manager] Initialized monitors: ok={init_ok}/{len(monitors)}; total_in_memory={len(self.monitors)}")
 
-            logging.info("Loading alerts for monitors from database.")
-
-            # Use a fresh cursor for alerts to avoid cursor state issues
+            # ---------------- Alerts ----------------
+            logging.info("[Monitor_Manager] Loading alerts for monitors from database.")
+            t_a0 = time.monotonic()
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 try:
-                    await cursor.execute("""
+                    logging.info("[Monitor_Manager] Fetching alerts from alert_servers...")
+                    await asyncio.wait_for(cursor.execute("""
                         SELECT server_number, guild_id, population_change, alert_channel
                         FROM alert_servers
-                    """)
-                    alerts = await cursor.fetchall()
-                    logging.info(f"Fetched {len(alerts)} alerts from alert_servers.")
+                    """), timeout=10)
+                    alerts = await asyncio.wait_for(cursor.fetchall(), timeout=10)
+                    logging.info(f"[Monitor_Manager] Alerts fetched: count={len(alerts)} (took {(time.monotonic()-t_a0):.3f}s)")
+                    if alerts:
+                        sample = alerts[:3]
+                        logging.debug(f"[Monitor_Manager] Alerts sample(3): {sample}")
+                except asyncio.TimeoutError:
+                    logging.error("[Monitor_Manager] Timeout while fetching alerts from DB.")
+                    return
                 except Exception as e:
-                    logging.error(f"Failed to fetch alerts from alert_servers: {e}")
+                    logging.error(f"[Monitor_Manager] Failed to fetch alerts from alert_servers: {e}")
                     return
 
                 # Map alerts to monitors
-                for alert_data in alerts:
+                applied = 0
+                for idx, alert_data in enumerate(alerts):
                     try:
                         server_number = str(alert_data['server_number'])
                         guild_id = int(alert_data['guild_id'])
                         population_change_threshold = int(alert_data['population_change'])
                         alert_channel_id = int(alert_data['alert_channel'])
+
+                        logging.debug(f"[Monitor_Manager] Apply alert[{idx}] server={server_number}, guild={guild_id}, "
+                                      f"thresh={population_change_threshold}, channel={alert_channel_id}; "
+                                      f"monitors_in_memory={len(self.monitors)}")
 
                         success = await self.add_alert_to_monitor(
                             server_number=server_number,
@@ -100,19 +126,28 @@ class Monitor_Manager:
                         )
 
                         if success:
+                            applied += 1
                             logging.info(
-                                f"Loaded alert for monitor: server_number={server_number}, guild_id={guild_id}, "
-                                f"alert_channel_id={alert_channel_id}, population_change_threshold={population_change_threshold}"
+                                f"[Monitor_Manager] Loaded alert OK: server={server_number}, guild={guild_id}, "
+                                f"channel={alert_channel_id}, threshold={population_change_threshold}"
                             )
                         else:
-                            logging.warning(f"No matching type 1 monitor for alert: server={server_number}, guild={guild_id}")
+                            logging.warning(f"[Monitor_Manager] No matching type 1 monitor for alert: server={server_number}, guild={guild_id}")
                     except Exception as e:
-                        logging.error(f"Failed to apply alert {alert_data}: {e}")
+                        logging.error(f"[Monitor_Manager] Failed to apply alert {alert_data}: {e}")
 
-            logging.info(f"Loaded {len(self.monitors)} monitors from database.")
+                logging.info(f"[Monitor_Manager] Alerts applied: {applied}/{len(alerts)}")
+
+            logging.info(f"[Monitor_Manager] load_monitors_from_db: done in {(time.monotonic()-t0):.3f}s; monitors_in_memory={len(self.monitors)}")
+        except asyncio.CancelledError:
+            logging.warning("[Monitor_Manager] load_monitors_from_db cancelled.")
+            raise
+        except Exception as e:
+            logging.error(f"[Monitor_Manager] Unexpected error in load_monitors_from_db: {e}")
         finally:
             try:
                 conn.close()
+                logging.debug("[Monitor_Manager] DB connection closed.")
             except Exception:
                 pass
 
@@ -159,7 +194,11 @@ class Monitor_Manager:
         """
         Add an alert to an existing monitor of type 1.
         """
-        for monitor in self.monitors: 
+        logging.debug(f"[Monitor_Manager] add_alert_to_monitor: server={server_number}, guild={guild_id}, "
+                      f"channel={alert_channel_id}, threshold={population_change_threshold}, "
+                      f"monitors_in_memory={len(self.monitors)}")
+
+        for i, monitor in enumerate(self.monitors):
             if (
                 str(monitor.server_number) == str(server_number) and  # Convert both to strings for comparison
                 monitor.guild_id == guild_id and
