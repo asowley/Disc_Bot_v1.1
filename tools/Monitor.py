@@ -164,53 +164,59 @@ class Monitor:
                         population_5_minutes_ago = population_counts[-5]
                         population_change = total_players - population_5_minutes_ago
 
-                        # Signed threshold logic
-                        try:
-                            threshold = int(self.population_change_threshold)
-                        except Exception:
-                            logging.error(f"[Monitor.py] Invalid alert threshold: {self.population_change_threshold}")
-                            threshold = 0
-
-                        # Only alert when the sign matches the intent:
-                        # +threshold => joins (increase), -threshold => leaves (decrease)
-                        should_alert = (
-                            (threshold > 0 and population_change >= threshold) or
-                            (threshold < 0 and population_change <= threshold)
-                        )
-
-                        logging.info(f"[Monitor.py] server={self.server_number} change={population_change} "
-                                     f"threshold={threshold} should_alert={should_alert}")
-
-                        if should_alert:
+                        # Skip alerts if any of the last 5 minutes had 0 population (likely recent crash)
+                        last5 = population_counts[-5:]
+                        if any(p == 0 for p in last5):
+                            logging.info(f"[Monitor.py] Skipping alert: zero population detected within last 5 minutes "
+                                         f"(last5={last5}) for server {self.server_number}")
+                        else:
+                            # Signed threshold logic
                             try:
-                                alert_type = "joined" if population_change > 0 else "left"
-                                magnitude = abs(population_change)
-                                embed = discord.Embed(
-                                    title=f"ALERT: Population Change on Server {self.server_number}",
-                                    description=(f"Population has {alert_type} by {magnitude} "
-                                                 f"in the last 5 minutes.\nThreshold: {threshold}"),
-                                    colour=discord.Colour.red(),
-                                    timestamp=datetime.now()
-                                )
-                                embed.add_field(name="Current Population", value=total_players, inline=False)
+                                threshold = int(self.population_change_threshold)
+                            except Exception:
+                                logging.error(f"[Monitor.py] Invalid alert threshold: {self.population_change_threshold}")
+                                threshold = 0
 
-                                # Retry sending the embed with the graph up to 3 times
-                                for attempt in range(3):
-                                    try:
-                                        if graph_path:
-                                            with open(graph_path, "rb") as f:
-                                                file_disc = discord.File(f, filename="image.png")
-                                                embed.set_image(url="attachment://image.png")
-                                                await alert_channel.send(embed=embed, file=file_disc)
-                                        else:
-                                            await alert_channel.send(embed=embed)
-                                        break
-                                    except Exception as e:
-                                        logging.error(f"[Monitor.py] Failed to send alert (attempt {attempt + 1}): {e}")
-                                        if attempt == 2:
-                                            logging.error("[Monitor.py] Giving up on sending alert after 3 attempts.")
-                            except Exception as e:
-                                logging.error(f"[Monitor.py] Failed to build/send alert embed: {e}")
+                            # Only alert when the sign matches the intent:
+                            # +threshold => joins (increase), -threshold => leaves (decrease)
+                            should_alert = (
+                                (threshold > 0 and population_change >= threshold) or
+                                (threshold < 0 and population_change <= threshold)
+                            )
+
+                            logging.info(f"[Monitor.py] server={self.server_number} change={population_change} "
+                                         f"threshold={threshold} should_alert={should_alert}")
+
+                            if should_alert:
+                                try:
+                                    alert_type = "joined" if population_change > 0 else "left"
+                                    magnitude = abs(population_change)
+                                    embed = discord.Embed(
+                                        title=f"ALERT: Population Change on Server {self.server_number}",
+                                        description=(f"Population has {alert_type} by {magnitude} "
+                                                     f"in the last 5 minutes.\nThreshold: {threshold}"),
+                                        colour=discord.Colour.red(),
+                                        timestamp=datetime.now()
+                                    )
+                                    embed.add_field(name="Current Population", value=total_players, inline=False)
+
+                                    # Retry sending the embed with the graph up to 3 times
+                                    for attempt in range(3):
+                                        try:
+                                            if graph_path:
+                                                with open(graph_path, "rb") as f:
+                                                    file_disc = discord.File(f, filename="image.png")
+                                                    embed.set_image(url="attachment://image.png")
+                                                    await alert_channel.send(embed=embed, file=file_disc)
+                                            else:
+                                                await alert_channel.send(embed=embed)
+                                            break
+                                        except Exception as e:
+                                            logging.error(f"[Monitor.py] Failed to send alert (attempt {attempt + 1}): {e}")
+                                            if attempt == 2:
+                                                logging.error("[Monitor.py] Giving up on sending alert after 3 attempts.")
+                                except Exception as e:
+                                    logging.error(f"[Monitor.py] Failed to build/send alert embed: {e}")
 
         # --- Discord embed logic ---
         if abs(balance) > 0:
