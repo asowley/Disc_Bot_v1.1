@@ -5,6 +5,13 @@ from discord import app_commands
 from discord.ext import commands
 from tools.connector import db_connector  # Adjust import if needed
 
+# Validation helpers
+def is_valid_server_number(value: str) -> bool:
+    return isinstance(value, str) and value.isdigit() and len(value) == 4
+
+def is_valid_monitor_type(value) -> bool:
+    return str(value) in {"1", "2", "3"}
+
 class MonitorCommands(commands.Cog):
     def __init__(self, bot, monitor_manager):
         self.bot = bot
@@ -24,6 +31,13 @@ class MonitorCommands(commands.Cog):
         nickname: str = ""
     ):
         await interaction.response.defer(thinking=True)
+        # Validate inputs
+        if not is_valid_server_number(server_number):
+            await interaction.followup.send("Invalid server number. It must be exactly 4 digits.", ephemeral=True)
+            return
+        if not is_valid_monitor_type(monitor_type):
+            await interaction.followup.send("Invalid monitor type. Allowed values are 1, 2, or 3.", ephemeral=True)
+            return
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -82,6 +96,13 @@ class MonitorCommands(commands.Cog):
         type_of_monitor="Monitor type (default: 1)")
     async def remove_monitor(self, interaction, server_number: str, type_of_monitor: str = "1"):
         await interaction.response.defer(thinking=True)
+        # Validate inputs
+        if not is_valid_server_number(server_number):
+            await interaction.followup.send("Invalid server number. It must be exactly 4 digits.", ephemeral=True)
+            return
+        if not is_valid_monitor_type(type_of_monitor):
+            await interaction.followup.send("Invalid monitor type. Allowed values are 1, 2, or 3.", ephemeral=True)
+            return
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -120,6 +141,10 @@ class MonitorCommands(commands.Cog):
         population_change_threshold="The population change required to trigger the alert. Negative for players left, Positive for players joined."
     )
     async def add_alert(self, interaction, server_number: str, population_change_threshold: int):
+        # Validate server number
+        if not is_valid_server_number(server_number):
+            await interaction.response.send_message("Invalid server number. It must be exactly 4 digits.", ephemeral=True)
+            return
         """
         Add an alert to an existing monitor.
         """
@@ -185,6 +210,10 @@ class MonitorCommands(commands.Cog):
         server_number="The ARK server number to monitor."
     )
     async def remove_alert(self, interaction, server_number: str):
+        # Validate server number
+        if not is_valid_server_number(server_number):
+            await interaction.response.send_message("Invalid server number. It must be exactly 4 digits.", ephemeral=True)
+            return
         """
         Remove an alert from an existing monitor.
         """
