@@ -86,12 +86,14 @@ class ArkCommands(commands.Cog):
                 return
 
             server_info, player_count, max_players, ip_and_port = result
-            if server_info == "error":
-                server_info = None
-            # Prepare the embed
-            custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', str(server_number))
-            in_game_day = server_info['attributes'].get('DAYTIME_s', 'Unknown')
-            ping = server_info['attributes'].get('EOSSERVERPING_l', 'Unknown')
+            if isinstance(server_info, dict):
+                custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', str(server_number))
+                in_game_day = server_info['attributes'].get('DAYTIME_s', 'Unknown')
+                ping = server_info['attributes'].get('EOSSERVERPING_l', 'Unknown')
+            else:
+                custom_server_name = str(server_number)
+                in_game_day = 'Unknown'
+                ping = 'Unknown'
             now = discord.utils.utcnow()
 
             embed = discord.Embed(
