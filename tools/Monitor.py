@@ -89,6 +89,25 @@ class Monitor:
         except Exception as e:
             logging.error(f"Exception in _run_monitor for server {self.server_number}: {e}")
 
+    # Safe extractor for server name to avoid `string indices must be integers`
+    def _safe_server_name(self, server_info):
+        try:
+            if isinstance(server_info, dict):
+                attrs = server_info.get('attributes')
+                if isinstance(attrs, dict):
+                    return (
+                        attrs.get('CUSTOMSERVERNAME_s')
+                        or attrs.get('SESSIONNAME_s')
+                        or str(self.server_number)
+                    )
+            # If server_info is already a string (unexpected), return it
+            if isinstance(server_info, str) and server_info.strip():
+                logging.debug(f"[Monitor.py] server_info is str; using as name. value='{server_info[:64]}'")
+                return server_info
+        except Exception as e:
+            logging.error(f"[Monitor.py] Failed to extract server name: {e}")
+        return str(self.server_number)
+
     async def run_monitor_type_1(self):
         '''A single monitor loop for monitors of type 1.'''
         eos = EOS()
@@ -98,6 +117,7 @@ class Monitor:
         # Attempt to fetch server info
         try:
             server_info, total_players, _, _ = await eos.matchmaking(self.server_number)
+            logging.debug(f"[Monitor.py] matchmaking returned type(server_info)={type(server_info)}")
         except Exception as e:
             logging.error(f"[Monitor.py] Failed to fetch server info for server {self.server_number}: {e}")
             server_info = None
@@ -236,9 +256,11 @@ class Monitor:
 
             embed.clear_fields()
 
+            # Use safe server name extraction
+            server_name = self._safe_server_name(server_info)
             embed.add_field(
                 name="Server Name",
-                value=server_info['attributes']['SESSIONNAME_s'] if server_info['attributes'] else str(self.server_number),
+                value=server_name,
                 inline=False
             )
             embed.add_field(
@@ -320,7 +342,6 @@ class Monitor:
 
     async def run_monitor_type_2(self):
         '''\nA single monitor loop for monitors of type 2.\n'''
-
         eos = EOS()
         try:
             # Efficiently fetch room_id from DB for this server
@@ -339,7 +360,8 @@ class Monitor:
             puids = await eos.players(self.server_number, room_id)
             puids_info = await eos.info(puids)
             server_info, total_players, max_players, ip_and_port = await eos.matchmaking(self.server_number)
-            custom_server_name = server_info["attributes"]["CUSTOMSERVERNAME_s"] if server_info['attributes'] else str(self.server_number)
+            # Use safe extractor here too
+            custom_server_name = self._safe_server_name(server_info)
         except Exception as e:
             logging.error(f"[Monitor.py] Error in run_monitor_type_2: {e}")
             await asyncio.sleep(30)
