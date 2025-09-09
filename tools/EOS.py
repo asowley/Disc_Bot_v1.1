@@ -276,5 +276,5 @@ class EOS:
             async with session.get(url, headers=headers) as response:
                 data = await response.json()
         if 'publicData' not in data:
-            return None, total_players, 70, f"{ip}:{port}"
+            return "error", total_players, 70, f"{ip}:{port}"
         return data['publicData'], data['publicData']['totalPlayers'], data['publicData']['settings']['maxPublicPlayers'], f"{ip}:{port}"
