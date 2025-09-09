@@ -100,13 +100,26 @@ class Monitor:
                         or attrs.get('SESSIONNAME_s')
                         or str(self.server_number)
                     )
-            # If server_info is already a string (unexpected), return it
             if isinstance(server_info, str) and server_info.strip():
                 logging.debug(f"[Monitor.py] server_info is str; using as name. value='{server_info[:64]}'")
                 return server_info
         except Exception as e:
             logging.error(f"[Monitor.py] Failed to extract server name: {e}")
         return str(self.server_number)
+
+    # Normalize odd names like "error", "unknown", or "no server ..."
+    def _normalize_server_name(self, name):
+        try:
+            s = (str(name) if name is not None else "").strip()
+            low = s.lower()
+            if not s or low == "error" or low == "unknown" or "no server" in low:
+                fallback = str(self.server_number)
+                logging.debug(f"[Monitor.py] Normalizing server name '{s}' -> '{fallback}'")
+                return fallback
+            return s
+        except Exception as e:
+            logging.error(f"[Monitor.py] Failed to normalize server name '{name}': {e}")
+            return str(self.server_number)
 
     async def run_monitor_type_1(self):
         '''A single monitor loop for monitors of type 1.'''
@@ -258,6 +271,7 @@ class Monitor:
 
             # Use safe server name extraction
             server_name = self._safe_server_name(server_info)
+            server_name = self._normalize_server_name(server_name)
             embed.add_field(
                 name="Server Name",
                 value=server_name,
@@ -360,8 +374,18 @@ class Monitor:
             puids = await eos.players(self.server_number, room_id)
             puids_info = await eos.info(puids)
             server_info, total_players, max_players, ip_and_port = await eos.matchmaking(self.server_number)
-            # Use safe extractor here too
-            custom_server_name = self._safe_server_name(server_info)
+            # Use safe + normalized name here
+            custom_server_name = self._normalize_server_name(self._safe_server_name(server_info))
+
+            # Guard totals if matchmaking was odd
+            try:
+                total_players = int(total_players) if total_players is not None else 0
+            except Exception:
+                total_players = 0
+            try:
+                max_players = int(max_players) if max_players is not None else 0
+            except Exception:
+                max_players = 0
         except Exception as e:
             logging.error(f"[Monitor.py] Error in run_monitor_type_2: {e}")
             await asyncio.sleep(30)
