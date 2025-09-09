@@ -85,12 +85,11 @@ class ArkCommands(commands.Cog):
                 await interaction.followup.send(f"Failed to fetch server info for `{server_number}` after {max_retries} attempts.", ephemeral=True)
                 return
 
-            server_info, total_players, max_players, ip_and_port = result
+            server_info, player_count, max_players, ip_and_port = result
 
             # Prepare the embed
-            custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', 'Unknown')
+            custom_server_name = server_info['attributes'].get('CUSTOMSERVERNAME_s', str(server_number))
             in_game_day = server_info['attributes'].get('DAYTIME_s', 'Unknown')
-            player_count = server_info.get('totalPlayers', 'Unknown')
             ping = server_info['attributes'].get('EOSSERVERPING_l', 'Unknown')
             now = discord.utils.utcnow()
 

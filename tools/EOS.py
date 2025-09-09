@@ -256,6 +256,7 @@ class EOS:
                     session_id = server.get("SessionID", "N/A")
                     ip = server.get("IP", "N/A")
                     port = server.get("Port", "N/A")
+                    total_players = server.get("NumPlayers", 0)
                     if session_id == "N/A":
                         logging.error(f"[EOS.py] No SessionID found for server {server_number}.")
                         raise Exception(f"No SessionID for server {server_number}")
@@ -274,5 +275,6 @@ class EOS:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 data = await response.json()
-        
+        if 'publicData' not in data:
+            return None, total_players, 70, f"{ip}:{port}"
         return data['publicData'], data['publicData']['totalPlayers'], data['publicData']['settings']['maxPublicPlayers'], f"{ip}:{port}"

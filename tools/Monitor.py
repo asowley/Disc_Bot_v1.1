@@ -238,7 +238,7 @@ class Monitor:
 
             embed.add_field(
                 name="Server Name",
-                value=server_info['attributes']['SESSIONNAME_s'] if server_info else "Unknown",
+                value=server_info['attributes']['SESSIONNAME_s'] if server_info else str(self.server_number),
                 inline=False
             )
             embed.add_field(
@@ -310,7 +310,7 @@ class Monitor:
         # --- Cleanup the graph file ---
         if graph_path:
             os.remove(graph_path)
-            
+
         # --- Wait for the next update ---
         current_timestamp = int(datetime.now().timestamp())
         wait_time = (last_monitor_timestamp + 60) - current_timestamp
@@ -339,7 +339,7 @@ class Monitor:
             puids = await eos.players(self.server_number, room_id)
             puids_info = await eos.info(puids)
             server_info, total_players, max_players, ip_and_port = await eos.matchmaking(self.server_number)
-            custom_server_name = server_info["attributes"]["CUSTOMSERVERNAME_s"]
+            custom_server_name = server_info["attributes"]["CUSTOMSERVERNAME_s"] if server_info else str(self.server_number)
         except Exception as e:
             logging.error(f"[Monitor.py] Error in run_monitor_type_2: {e}")
             await asyncio.sleep(30)

@@ -77,7 +77,7 @@ class EOSCommands(commands.Cog):
                     puids = await eos.players(server_number, room_id)
                     puids_info = await eos.info(puids)
                     server_info, total_players, max_players, _ = await eos.matchmaking(server_number)
-                    custom_server_name = server_info["attributes"]["CUSTOMSERVERNAME_s"]
+                    custom_server_name = server_info["attributes"]["CUSTOMSERVERNAME_s"] if server_info else str(server_number)
                     break
                 except Exception as e:
                     logging.error(f"[eos_commands.py] Error fetching player info for server {server_number}: {e}")
